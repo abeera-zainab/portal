@@ -1,0 +1,77 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid));
+    }
+
+    function isEmployee() {
+      return isSignedIn() && exists(/databases/$(database)/documents/employees/$(request.auth.uid));
+    }
+
+    function isTeamLead() {
+      return isEmployee()
+        && get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.role == "team_lead";
+    }
+
+    function leadTeam() {
+      return get(/databases/$(database)/documents/employees/$(request.auth.uid)).data.team;
+    }
+
+    match /admins/{adminId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /employees/{employeeId} {
+      allow read: if isSignedIn();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isTeamLead()
+        && resource.data.team == leadTeam()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(["team", "teamLeadUid"])
+      );
+    }
+
+    match /usernames/{username} {
+      allow get: if true;
+      allow list: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    match /settings/{docId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /holidays/{holidayId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /leave_requests/{requestId} {
+      allow read: if isSignedIn();
+      allow create: if isEmployee() && request.resource.data.employeeUid == request.auth.uid;
+      allow update: if isAdmin() || isEmployee();
+    }
+
+    match /salary_payments/{paymentId} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+
+    match /{path=**}/records/{recordId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    match /{document=**} {
+      allow read: if isSignedIn();
+      allow write: if isAdmin();
+    }
+  }
+}
