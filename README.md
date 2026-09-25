@@ -1,58 +1,32 @@
-# PSS Attendance Portal
+# React + TypeScript + Vite
 
-A professional attendance portal for PSS employees, based on [attendance-portal-v2](https://github.com/bilalajmery/attendance-portal-v2). Staff sign in with email and password (no Google login).
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-## What it does
+Currently, two official plugins are available:
 
-### Employees
-- Sign in with work email and password
-- Check in and check out
-- Request leave (approved by a team lead or admin)
-- View calendar, history, and estimated salary
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-### Team leads
-- Everything an employee can do
-- Approve or reject leave for assigned team members
-- View today’s team attendance
+## React Compiler
 
-### Admins
-- Create employee, team lead, and admin accounts (email + password)
-- Assign team leads
-- Review all leave requests
-- Attendance, holidays, salary reports, overtime, and portal settings
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-## Tech stack
+## Expanding the Oxlint configuration
 
-- React 18 + Vite + TypeScript
-- Tailwind CSS + shadcn/ui
-- React Router v6
-- Firebase Authentication (email/password)
-- Cloud Firestore
+If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
 
-## Setup
-
-1. Install Node.js 18+ and run `npm install`.
-2. Create a Firebase project.
-3. Enable **Email/Password** under Authentication → Sign-in method. Do not enable Google.
-4. Create a Firestore database.
-5. Copy `.env.example` to `.env` and fill in `VITE_FIREBASE_*` values.
-6. Create the first admin:
-   - Authentication → Add user (email + password)
-   - Firestore → `admins/{uid}` with fields `email`, `name`, `role: "admin"`
-7. Optional: publish rules from `firestore.rules` in the Firebase console.
-
-```bash
-npm run dev
+```json
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "options": {
+    "typeAware": true
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/only-export-components": ["warn", { "allowConstantExport": true }]
+  }
+}
 ```
 
-The app runs at `http://localhost:5173`.
-
-## Roles
-
-| Role | Access |
-|------|--------|
-| Employee | Dashboard, calendar, salary, leave requests |
-| Team lead | Employee access plus team leave and team attendance |
-| Admin | Full admin portal |
-
-Employees cannot open `/admin`. Admins are routed to `/admin/dashboard` after login.
+See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.

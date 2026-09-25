@@ -1,113 +1,415 @@
-import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { AuthProvider } from "./context/AuthContext";
-import { Toaster } from "sonner";
-import { RequireAuth } from "./components/auth/RequireAuth";
-import { ThemeProvider } from "./context/ThemeContext";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
+import { Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
+import type { Person, Role, TeamId } from "./types";
+import { AccountSettings } from "./AccountSettings";
+import { AdminShell } from "./admin/AdminShell";
+import { AttendanceReport } from "./admin/AttendanceReport";
+import { LeaveInbox } from "./LeaveReview";
+import { UserDetail } from "./admin/PersonDetail";
+import {
+  TEAMS,
+  assignTeam,
+  checkIn,
+  checkOut,
+  formatClock,
+  formatWorked,
+  attendanceStatus,
+  isOnLeave,
+  login,
+  logout,
+  minutesBetween,
+  requestLeave,
+  teamName,
+  todayKey,
+  useDatabase,
+  useDbError,
+  useDbReady,
+  useSession,
+} from "./store";
 
-import { Login } from "./routes/shared/Login";
-import { AdminLogin } from "./routes/shared/AdminLogin";
-import { AccessDenied } from "./routes/shared/AccessDenied";
+const roleLabel = (role: Role) => {
+  if (role === "team_lead") return "Officer · Team lead";
+  if (role === "officer") return "Officer";
+  if (role === "admin") return "Admin";
+  return "Employee";
+};
 
-import { EmployeeLayout } from "./routes/employee/Layout";
-import { EmployeeDashboard } from "./routes/employee/Dashboard";
-import { EmployeeCalendar } from "./routes/employee/Calendar";
-import { EmployeeSalary } from "./routes/employee/Salary";
-import { EmployeeLeave } from "./routes/employee/Leave";
-import { TeamLeaveInbox } from "./routes/team/LeaveInbox";
-import { TeamAttendance } from "./routes/team/TeamAttendance";
+export default function App() {
+  const session = useSession();
+  const ready = useDbReady();
+  const dbError = useDbError();
+  if (!ready) {
+    return (
+      <div className="login-wrap">
+        <p>Connecting to the local PostgreSQL database...</p>
+        {dbError ? <p className="error">{dbError}</p> : null}
+      </div>
+    );
+  }
+  if (!session) return <Login />;
+  if (session.role === "admin") return <AdminShell />;
+  return <StaffShell person={session} />;
+}
 
-import { AdminLayout } from "./routes/admin/Layout";
-import { AdminDashboard } from "./routes/admin/dashboard/Dashboard";
-import { EmployeeList } from "./routes/admin/employees/EmployeeList";
-import { EmployeeHistory } from "./routes/admin/employees/EmployeeHistory";
-import { AdminList } from "./routes/admin/admins/AdminList";
-import { AttendanceView } from "./routes/admin/attendance/AttendanceView";
-import { CalendarView } from "./routes/admin/calendar/CalendarView";
-import { HolidayManagement } from "./routes/admin/holidays/HolidayManagement";
-import { SalaryReports } from "./routes/admin/reports/SalaryReports";
-import { PaidSalaries } from "./routes/admin/reports/PaidSalaries";
-import { OvertimePage } from "./routes/admin/overtime/Overtime";
-import { Settings } from "./routes/admin/settings/Settings";
-import { AdminLeaveInbox } from "./routes/admin/leave/LeaveInbox";
-import { SettingsProvider } from "./context/SettingsContext";
-
-function App() {
+function StaffShell({ person }: { person: Person }) {
   return (
-    <ThemeProvider>
-      <AuthProvider>
-        <SettingsProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route path="/login" element={<Login />} />
-              <Route path="/admin/login" element={<AdminLogin />} />
-              <Route path="/access-denied" element={<AccessDenied />} />
-
-              <Route
-                path="/"
-                element={
-                  <RequireAuth roles={["employee", "team_lead"]}>
-                    <EmployeeLayout />
-                  </RequireAuth>
-                }
-              >
-                <Route index element={<Navigate to="/dashboard" replace />} />
-                <Route path="dashboard" element={<EmployeeDashboard />} />
-                <Route path="calendar" element={<EmployeeCalendar />} />
-                <Route path="salary" element={<EmployeeSalary />} />
-                <Route path="leave" element={<EmployeeLeave />} />
-                <Route
-                  path="team/leave"
-                  element={
-                    <RequireAuth roles={["team_lead"]}>
-                      <TeamLeaveInbox />
-                    </RequireAuth>
-                  }
-                />
-                <Route
-                  path="team/attendance"
-                  element={
-                    <RequireAuth roles={["team_lead"]}>
-                      <TeamAttendance />
-                    </RequireAuth>
-                  }
-                />
-              </Route>
-
-              <Route
-                path="/admin"
-                element={
-                  <RequireAuth roles={["admin"]}>
-                    <AdminLayout />
-                  </RequireAuth>
-                }
-              >
-                <Route
-                  index
-                  element={<Navigate to="/admin/dashboard" replace />}
-                />
-                <Route path="dashboard" element={<AdminDashboard />} />
-                <Route path="employees" element={<EmployeeList />} />
-                <Route path="employees/:uid" element={<EmployeeHistory />} />
-                <Route path="admins" element={<AdminList />} />
-                <Route path="attendance" element={<AttendanceView />} />
-                <Route path="leave" element={<AdminLeaveInbox />} />
-                <Route path="calendar" element={<CalendarView />} />
-                <Route path="holidays" element={<HolidayManagement />} />
-                <Route path="reports" element={<SalaryReports />} />
-                <Route path="paid-salaries" element={<PaidSalaries />} />
-                <Route path="overtime" element={<OvertimePage />} />
-                <Route path="settings" element={<Settings />} />
-              </Route>
-
-              <Route path="*" element={<Navigate to="/login" replace />} />
-            </Routes>
-          </BrowserRouter>
-
-          <Toaster position="bottom-right" richColors />
-        </SettingsProvider>
-      </AuthProvider>
-    </ThemeProvider>
+    <div className="admin-frame">
+      <aside className="sidenav">
+        <div className="sidenav-brand">
+          <img src="/pss-logo.png?v=3" alt="Pak Surveillance Shield" className="logo logo-side" />
+          <strong>PSS</strong>
+        </div>
+        <nav>
+          <NavLink to="/" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+            Dashboard
+          </NavLink>
+          <NavLink to="/leave" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+            Leave
+          </NavLink>
+          {person.role === "team_lead" ? (
+            <NavLink to="/team" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+              Team
+            </NavLink>
+          ) : null}
+          <NavLink to="/account" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+            Account
+          </NavLink>
+        </nav>
+      </aside>
+      <div className="admin-main">
+        <header className="topbar">
+          <div className="brand">
+            <strong>PSS Attendance</strong>
+            <span>{person.team ? teamName(person.team) : roleLabel(person.role)}</span>
+          </div>
+          <div className="who">
+            <div>
+              <strong>{person.name}</strong>
+              <div>
+                <span>
+                  {roleLabel(person.role)} · {person.userId}
+                </span>
+              </div>
+            </div>
+            <button className="btn secondary" onClick={logout}>
+              Sign out
+            </button>
+          </div>
+        </header>
+        <div className="admin-page">
+          <Routes>
+            <Route path="/" element={<AttendanceCard person={person} />} />
+            <Route path="/leave" element={<LeaveCard person={person} />} />
+            <Route
+              path="/team"
+              element={person.role === "team_lead" ? <TeamTools lead={person} /> : <Navigate to="/" replace />}
+            />
+            <Route path="/account" element={<AccountSettings person={person} />} />
+            <Route path="/users/:userId" element={<UserDetail backTo="/team" backLabel="← Back to team" />} />
+            <Route path="/attendance/:userId" element={<AttendanceReport />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
+          </Routes>
+        </div>
+      </div>
+    </div>
   );
 }
 
-export default App;
+function Login() {
+  const [identifier, setIdentifier] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await login(identifier, password);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not sign in.");
+    }
+  };
+
+  return (
+    <div className="login-wrap">
+      <form className="card login-card" onSubmit={submit}>
+        <img src="/pss-logo.png?v=3" alt="Pak Surveillance Shield" className="logo logo-login" />
+        <h1>PSS Attendance</h1>
+        <p className="muted">Sign in with your username or email.</p>
+        <div className="row" style={{ marginTop: 18 }}>
+          <label style={{ flex: 1 }}>
+            Username or email
+            <input value={identifier} onChange={(event) => setIdentifier(event.target.value)} required />
+          </label>
+        </div>
+        <div className="row" style={{ marginTop: 12 }}>
+          <label style={{ flex: 1 }}>
+            Password
+            <input
+              type="password"
+              value={password}
+              onChange={(event) => setPassword(event.target.value)}
+              required
+            />
+          </label>
+        </div>
+        {error ? <p className="error">{error}</p> : null}
+        <button className="btn" style={{ marginTop: 16 }} type="submit">
+          Sign in
+        </button>
+        <div className="hint">
+          First admin: username <strong>admin</strong>, password <strong>admin123</strong>, user ID PSS001.
+        </div>
+      </form>
+    </div>
+  );
+}
+
+function AttendanceCard({ person }: { person: Person }) {
+  const db = useDatabase();
+  const [now, setNow] = useState(() => new Date());
+  const [error, setError] = useState("");
+  const record = db.attendance.find((item) => item.userId === person.userId && item.date === todayKey());
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(new Date()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const run = async (action: () => Promise<void>) => {
+    try {
+      setError("");
+      await action();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update attendance.");
+    }
+  };
+
+  const tracked = record
+    ? record.workedMinutes ?? minutesBetween(record.checkIn, record.checkOut ? new Date(record.checkOut) : now)
+    : undefined;
+  const onLeave = isOnLeave(person.userId, db.leave);
+  const status = attendanceStatus(person.userId, db.attendance, db.leave, now);
+
+  return (
+    <section className="card">
+      <h2>Today</h2>
+      <p className="muted">
+        {onLeave
+          ? "You are on approved leave today."
+          : "9:30 AM is the last on-time check-in. Checking in after 9:30 AM is late."}
+      </p>
+      <div className="role-tags">
+        {onLeave ? <span className="badge leave">Leave</span> : null}
+        {person.lateAllowed ? <span className="badge late">Late check-in</span> : null}
+        {person.workMode === "wfh" ? <span className="badge">Work from home</span> : null}
+        {person.workMode === "remote" ? <span className="badge remote">Remote</span> : null}
+      </div>
+      <div className="clock">{formatWorked(tracked).replace("—", "0h 0m")}</div>
+      <p>
+        {status === "late" ? <span className="badge late">Late</span> : null}
+        {status === "on_time" ? <span className="badge">On time</span> : null}
+        {status === "leave" ? <span className="badge leave">Leave</span> : null}
+        {status === "not_in" ? <span className="badge wait">Not in</span> : null}
+        {record ? (
+          <span className="muted"> · In {formatClock(record.checkIn)} · Out {formatClock(record.checkOut)}</span>
+        ) : (
+          <span className="muted"> · Not checked in yet</span>
+        )}
+      </p>
+      <div className="row">
+        <button className="btn" disabled={Boolean(record)} onClick={() => run(() => checkIn(person.userId))}>
+          Check in
+        </button>
+        <button
+          className="btn secondary"
+          disabled={!record || Boolean(record.checkOut)}
+          onClick={() => run(() => checkOut(person.userId))}
+        >
+          Check out
+        </button>
+      </div>
+      {error ? <p className="error">{error}</p> : null}
+    </section>
+  );
+}
+
+function LeaveCard({ person }: { person: Person }) {
+  const db = useDatabase();
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [reason, setReason] = useState("");
+  const [error, setError] = useState("");
+  const mine = db.leave.filter((request) => request.userId === person.userId);
+
+  const submit = async (event: FormEvent) => {
+    event.preventDefault();
+    try {
+      await requestLeave(person.userId, from, to, reason);
+      setReason("");
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not request leave.");
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Leave</h2>
+      <p className="muted">Your team lead or an admin can approve or reject this.</p>
+      <form onSubmit={submit} className="row" style={{ marginTop: 14 }}>
+        <label>
+          From
+          <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} required />
+        </label>
+        <label>
+          To
+          <input type="date" value={to} onChange={(event) => setTo(event.target.value)} required />
+        </label>
+        <label style={{ flex: 1, minWidth: 220 }}>
+          Reason
+          <input value={reason} onChange={(event) => setReason(event.target.value)} required />
+        </label>
+        <button className="btn" type="submit">
+          Request leave
+        </button>
+      </form>
+      {error ? <p className="error">{error}</p> : null}
+      <table>
+        <thead>
+          <tr>
+            <th>Dates</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Rejection reason</th>
+          </tr>
+        </thead>
+        <tbody>
+          {mine.length === 0 ? (
+            <tr>
+              <td colSpan={4}>No leave requests yet.</td>
+            </tr>
+          ) : (
+            mine.map((request) => (
+              <tr key={request.id}>
+                <td>
+                  {request.from}
+                  {request.to !== request.from ? ` → ${request.to}` : ""}
+                </td>
+                <td>{request.reason}</td>
+                <td>
+                  <StatusBadge status={request.status} />
+                </td>
+                <td>{request.status === "rejected" ? request.rejectionReason : "—"}</td>
+              </tr>
+            ))
+          )}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
+function TeamTools({ lead }: { lead: Person }) {
+  const db = useDatabase();
+  const [choices, setChoices] = useState<Record<string, TeamId>>({});
+  const [error, setError] = useState("");
+  const members = db.people.filter((person) => person.team === lead.team && person.userId !== lead.userId);
+  const requests = db.leave.filter((request) => {
+    const owner = db.people.find((person) => person.userId === request.userId);
+    return owner?.team === lead.team && request.userId !== lead.userId;
+  });
+
+  return (
+    <>
+      <section className="card">
+        <h2>Team</h2>
+        <p className="muted">Today’s attendance. Move someone onto another PSS team.</p>
+        {error ? <p className="error">{error}</p> : null}
+        <table>
+          <thead>
+            <tr>
+              <th>Name</th>
+              <th>User ID</th>
+              <th>Today</th>
+              <th>Move to</th>
+            </tr>
+          </thead>
+          <tbody>
+            {members.length === 0 ? (
+              <tr>
+                <td colSpan={4}>No one else is on your team yet.</td>
+              </tr>
+            ) : (
+              members.map((member) => {
+                const nextTeam = choices[member.userId] ?? member.team ?? "ops";
+                return (
+                  <tr key={member.userId}>
+                    <td>
+                      <Link className="name-btn" to={`/users/${member.userId}`}>
+                        {member.name}
+                      </Link>
+                    </td>
+                    <td>{member.userId}</td>
+                    <td>
+                      {attendanceStatus(member.userId, db.attendance, db.leave) === "late" ? (
+                        <span className="badge late">Late</span>
+                      ) : attendanceStatus(member.userId, db.attendance, db.leave) === "leave" ? (
+                        <span className="badge leave">Leave</span>
+                      ) : attendanceStatus(member.userId, db.attendance, db.leave) === "on_time" ? (
+                        <span className="badge">On time</span>
+                      ) : (
+                        <span className="badge wait">Not in</span>
+                      )}
+                    </td>
+                    <td>
+                      <div className="row">
+                        <select
+                          value={nextTeam}
+                          onChange={(event) =>
+                            setChoices((current) => ({
+                              ...current,
+                              [member.userId]: event.target.value as TeamId,
+                            }))
+                          }
+                        >
+                          {TEAMS.map((team) => (
+                            <option key={team.id} value={team.id}>
+                              {team.name}
+                            </option>
+                          ))}
+                        </select>
+                        <button
+                          className="btn secondary"
+                          disabled={nextTeam === member.team}
+                          onClick={() => {
+                            void (async () => {
+                              try {
+                                await assignTeam(member.userId, nextTeam);
+                                setError("");
+                              } catch (err) {
+                                setError(err instanceof Error ? err.message : "Could not move this person.");
+                              }
+                            })();
+                          }}
+                        >
+                          Move
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
+            )}
+          </tbody>
+        </table>
+      </section>
+      <LeaveInbox requests={requests} reviewerId={lead.userId} title="Team leave" />
+    </>
+  );
+}
+
+function StatusBadge({ status }: { status: "pending" | "approved" | "rejected" }) {
+  const className = status === "approved" ? "badge" : status === "rejected" ? "badge no" : "badge wait";
+  return <span className={className}>{status}</span>;
+}
