@@ -1,12 +1,20 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
-import { Link, NavLink, Navigate, Route, Routes } from "react-router-dom";
-import type { Person, Role, TeamId } from "./types";
+import { Link, Navigate, Route, Routes } from "react-router-dom";
+import type { Person, TeamId } from "./types";
 import { AccountSettings } from "./AccountSettings";
 import { AdminShell } from "./admin/AdminShell";
 import { AttendanceReport } from "./admin/AttendanceReport";
 import { LeaveInbox } from "./LeaveReview";
 import { UserDetail } from "./admin/PersonDetail";
+import {
+  AccountSettingsButton,
+  DashboardIcon,
+  LeaveIcon,
+  LeaveNotifications,
+  SideLink,
+  TeamIcon,
+} from "./ShellChrome";
 import {
   TEAMS,
   assignTeam,
@@ -19,6 +27,7 @@ import {
   login,
   logout,
   minutesBetween,
+  personTeams,
   requestLeave,
   teamName,
   todayKey,
@@ -28,10 +37,11 @@ import {
   useSession,
 } from "./store";
 
-const roleLabel = (role: Role) => {
-  if (role === "team_lead") return "Officer · Team lead";
-  if (role === "officer") return "Officer";
-  if (role === "admin") return "Admin";
+const roleLabel = (person: Person) => {
+  if (person.role === "team_lead") return person.officer ? "Officer · Team lead" : "Team lead";
+  if (person.role === "mto") return person.officer ? "Officer · MTO" : "MTO";
+  if (person.role === "officer" || person.officer) return "Officer";
+  if (person.role === "admin") return "Admin";
   return "Employee";
 };
 
@@ -60,38 +70,38 @@ function StaffShell({ person }: { person: Person }) {
           <img src="/pss-logo.png?v=3" alt="Pak Surveillance Shield" className="logo logo-side" />
           <strong>PSS</strong>
         </div>
+        <LeaveNotifications person={person} />
+        <p className="nav-label">Menu</p>
         <nav>
-          <NavLink to="/" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+          <SideLink to="/" end icon={<DashboardIcon />}>
             Dashboard
-          </NavLink>
-          <NavLink to="/leave" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+          </SideLink>
+          <SideLink to="/leave" end icon={<LeaveIcon />}>
             Leave
-          </NavLink>
+          </SideLink>
           {person.role === "team_lead" ? (
-            <NavLink to="/team" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+            <SideLink to="/team" end icon={<TeamIcon />}>
               Team
-            </NavLink>
+            </SideLink>
           ) : null}
-          <NavLink to="/account" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
-            Account
-          </NavLink>
         </nav>
       </aside>
       <div className="admin-main">
         <header className="topbar">
           <div className="brand">
             <strong>PSS Attendance</strong>
-            <span>{person.team ? teamName(person.team) : roleLabel(person.role)}</span>
+            <span>{person.team ? teamName(person.team) : roleLabel(person)}</span>
           </div>
           <div className="who">
             <div>
               <strong>{person.name}</strong>
               <div>
                 <span>
-                  {roleLabel(person.role)} · {person.userId}
+                  {roleLabel(person)} · {person.userId}
                 </span>
               </div>
             </div>
+            <AccountSettingsButton />
             <button className="btn secondary" onClick={logout}>
               Sign out
             </button>
@@ -256,7 +266,11 @@ function LeaveCard({ person }: { person: Person }) {
   return (
     <section className="card">
       <h2>Leave</h2>
-      <p className="muted">Your team lead or an admin can approve or reject this.</p>
+      <p className="muted">
+        {person.role === "team_lead"
+          ? "Team lead leave is sent to an admin."
+          : "Your team lead or an admin can approve or reject this."}
+      </p>
       <form onSubmit={submit} className="row" style={{ marginTop: 14 }}>
         <label>
           From
@@ -317,7 +331,9 @@ function TeamTools({ lead }: { lead: Person }) {
   const members = db.people.filter((person) => person.team === lead.team && person.userId !== lead.userId);
   const requests = db.leave.filter((request) => {
     const owner = db.people.find((person) => person.userId === request.userId);
-    return owner?.team === lead.team && request.userId !== lead.userId;
+    if (!owner || owner.userId === lead.userId) return false;
+    if (owner.role === "team_lead" || owner.role === "admin") return false;
+    return personTeams(lead).some((team) => personTeams(owner).includes(team));
   });
 
   return (

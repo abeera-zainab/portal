@@ -75,6 +75,8 @@ await pool.query(`
 
   ALTER TABLE people ADD COLUMN IF NOT EXISTS late_allowed BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS work_mode TEXT;
+  ALTER TABLE people ADD COLUMN IF NOT EXISTS officer BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE people ADD COLUMN IF NOT EXISTS mto BOOLEAN NOT NULL DEFAULT FALSE;
 
   CREATE TABLE IF NOT EXISTS attendance (
     user_id TEXT NOT NULL REFERENCES people(user_id) ON DELETE CASCADE,
@@ -113,7 +115,7 @@ const localDate = (value = new Date()) => {
 async function readState() {
   const [people, attendance, leave] = await Promise.all([
     pool.query(
-      `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, work_mode,
+      `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, work_mode, officer, mto,
               to_char(joined, 'YYYY-MM-DD') AS joined
        FROM people ORDER BY user_id`
     ),
@@ -141,6 +143,8 @@ async function readState() {
       active: row.active,
       joined: row.joined || undefined,
       lateAllowed: row.late_allowed,
+      officer: row.officer,
+      mto: row.mto,
       workMode: row.work_mode || null,
     })),
     attendance: attendance.rows.map((row) => ({
@@ -275,13 +279,14 @@ app.post("/api/people", async (req, res) => {
   const name = String(body.name || "").trim();
   const password = String(body.password || "");
   const role = body.role || "employee";
-  if (!["admin", "team_lead", "officer", "employee"].includes(role)) {
+  if (!["admin", "team_lead", "officer", "employee", "mto"].includes(role)) {
     res.status(400).json({ error: "Choose a valid role." });
     return;
   }
   const team = role === "admin" ? null : body.team || null;
   const teams = team ? [team] : [];
   const lateAllowed = role !== "admin" && Boolean(body.lateAllowed);
+  const mto = role !== "admin" && Boolean(body.mto);
   const workMode = role === "admin" ? null : body.workMode || null;
   if (workMode !== null && workMode !== "wfh" && workMode !== "remote") {
     res.status(400).json({ error: "Choose work from home, remote, or neither." });
@@ -315,9 +320,9 @@ app.post("/api/people", async (req, res) => {
   }
   try {
     await pool.query(
-      `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, work_mode)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,CURRENT_DATE,$9,$10)`,
-      [userId, name, username, email, password, role, team, teams, lateAllowed, workMode]
+      `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, work_mode, mto)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,CURRENT_DATE,$9,$10,$11)`,
+      [userId, name, username, email, password, role, team, teams, lateAllowed, workMode, mto]
     );
   } catch (error) {
     if (error && error.code === "23505") {
@@ -364,15 +369,21 @@ app.patch("/api/people/:userId", async (req, res) => {
       res.status(400).json({ error: "Choose work from home, remote, or neither." });
       return;
     }
+    let role = person.role;
+    if (req.body.role === "employee" && person.role === "officer") role = "employee";
+    if (req.body.role === "officer" && person.role === "employee") role = "officer";
+    let officer = req.body.officer === undefined ? person.officer : Boolean(req.body.officer);
+    const mto = req.body.mto === undefined ? person.mto : Boolean(req.body.mto);
+    if (role === "officer") officer = false;
     await pool.query(
-      `UPDATE people SET active = $2, late_allowed = $3, work_mode = $4 WHERE user_id = $1`,
-      [userId, active, lateAllowed, workMode]
+      `UPDATE people SET role = $2, active = $3, late_allowed = $4, work_mode = $5, officer = $6, mto = $7 WHERE user_id = $1`,
+      [userId, role, active, lateAllowed, workMode, officer, mto]
     );
     res.json({ state: await readState() });
     return;
   }
   const role = req.body.role ?? person.role;
-  if (!["admin", "team_lead", "officer", "employee"].includes(role)) {
+  if (!["admin", "team_lead", "officer", "employee", "mto"].includes(role)) {
     res.status(400).json({ error: "Choose a valid role." });
     return;
   }
@@ -395,17 +406,22 @@ app.patch("/api/people/:userId", async (req, res) => {
   }
   let lateAllowed = req.body.lateAllowed === undefined ? person.late_allowed : Boolean(req.body.lateAllowed);
   let workMode = req.body.workMode === undefined ? person.work_mode : req.body.workMode || null;
+  let officer = req.body.officer === undefined ? person.officer : Boolean(req.body.officer);
+  let mto = req.body.mto === undefined ? person.mto : Boolean(req.body.mto);
   if (role === "admin") {
     lateAllowed = false;
     workMode = null;
+    officer = false;
+    mto = false;
   }
+  if (role === "officer") officer = false;
   if (workMode !== null && workMode !== "wfh" && workMode !== "remote") {
     res.status(400).json({ error: "Choose work from home, remote, or neither." });
     return;
   }
   await pool.query(
-    `UPDATE people SET role = $2, team = $3, teams = $4, active = $5, late_allowed = $6, work_mode = $7 WHERE user_id = $1`,
-    [userId, role, teams[0] ?? null, teams, active, lateAllowed, workMode]
+    `UPDATE people SET role = $2, team = $3, teams = $4, active = $5, late_allowed = $6, work_mode = $7, officer = $8, mto = $9 WHERE user_id = $1`,
+    [userId, role, teams[0] ?? null, teams, active, lateAllowed, workMode, officer, mto]
   );
   res.json({ state: await readState() });
 });
@@ -512,8 +528,12 @@ app.post("/api/leave/:id/review", async (req, res) => {
     return;
   }
   if (who.role === "team_lead") {
-    const owner = await pool.query(`SELECT team, teams FROM people WHERE user_id = $1`, [request.user_id]);
+    const owner = await pool.query(`SELECT role, team, teams FROM people WHERE user_id = $1`, [request.user_id]);
     const member = owner.rows[0];
+    if (member?.role === "team_lead" || member?.role === "admin") {
+      res.status(403).json({ error: "An admin reviews leave for team leads." });
+      return;
+    }
     const leadTeams = who.teams?.length ? who.teams : who.team ? [who.team] : [];
     const memberTeams = member?.teams?.length ? member.teams : member?.team ? [member.team] : [];
     if (!memberTeams.some((team) => leadTeams.includes(team))) {

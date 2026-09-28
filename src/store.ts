@@ -77,16 +77,16 @@ export const useSession = () => {
 export const teamName = (team: TeamId | null) =>
   TEAMS.find((item) => item.id === team)?.name ?? "No team";
 
-export const roleTags = (role: Role): { id: string; label: string }[] => {
-  if (role === "team_lead") {
-    return [
-      { id: "officer", label: "Officer" },
-      { id: "team_lead", label: "Team lead" },
-    ];
-  }
-  if (role === "officer") return [{ id: "officer", label: "Officer" }];
-  if (role === "admin") return [{ id: "admin", label: "Admin" }];
-  return [{ id: "employee", label: "Team" }];
+export const isOfficer = (person: Person) => person.role === "officer" || Boolean(person.officer);
+
+export const roleTags = (person: Person): { id: string; label: string }[] => {
+  if (person.role === "admin") return [{ id: "admin", label: "Admin" }];
+  const tags: { id: string; label: string }[] = [];
+  if (isOfficer(person)) tags.push({ id: "officer", label: "Officer" });
+  if (person.role === "team_lead") tags.push({ id: "team_lead", label: "Team lead" });
+  if (person.role === "mto") tags.push({ id: "mto", label: "MTO" });
+  if (!tags.length) tags.push({ id: "employee", label: "Team" });
+  return tags;
 };
 
 export const personTeams = (person: Person): TeamId[] =>
@@ -223,6 +223,22 @@ export const setPersonActive = async (userId: string, active: boolean) => {
 
 export const setLateAllowed = async (userId: string, lateAllowed: boolean) => {
   await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", { lateAllowed });
+};
+
+export const setOfficerTag = async (userId: string, officer: boolean) => {
+  const person = database.people.find((item) => item.userId === userId);
+  if (!person) throw new Error("Person not found.");
+  if (person.role === "team_lead" || person.role === "mto") {
+    await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", { officer });
+    return;
+  }
+  const teams = personTeams(person);
+  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", {
+    role: officer ? "officer" : "employee",
+    officer,
+    teams,
+    team: teams[0] ?? null,
+  });
 };
 
 export const setWorkMode = async (userId: string, workMode: WorkMode | null) => {

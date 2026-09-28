@@ -1,6 +1,15 @@
-import { NavLink, Navigate, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { AccountSettings } from "../AccountSettings";
 import { LeavePage } from "../LeaveReview";
+import {
+  AccountSettingsButton,
+  DashboardIcon,
+  LeaveIcon,
+  LeaveNotifications,
+  PeopleIcon,
+  ReportIcon,
+  SideLink,
+} from "../ShellChrome";
 import { logout, useSession } from "../store";
 import { AttendanceList } from "./AttendanceList";
 import { AttendanceReport } from "./AttendanceReport";
@@ -19,25 +28,21 @@ export function AdminShell() {
           <img src="/pss-logo.png?v=3" alt="Pak Surveillance Shield" className="logo logo-side" />
           <strong>PSS</strong>
         </div>
+        <LeaveNotifications person={session} />
+        <p className="nav-label">Menu</p>
         <nav>
-          <NavLink to="/dashboard" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+          <SideLink to="/dashboard" end icon={<DashboardIcon />}>
             Dashboard
-          </NavLink>
-          <NavLink to="/users" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}>
+          </SideLink>
+          <SideLink to="/users" icon={<PeopleIcon />}>
             User management
-          </NavLink>
-          <NavLink
-            to="/attendance"
-            className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")}
-          >
+          </SideLink>
+          <SideLink to="/attendance" icon={<ReportIcon />}>
             Attendance report
-          </NavLink>
-          <NavLink to="/leave" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
+          </SideLink>
+          <SideLink to="/leave" end icon={<LeaveIcon />}>
             Leave
-          </NavLink>
-          <NavLink to="/account" className={({ isActive }) => (isActive ? "nav-link active" : "nav-link")} end>
-            Account
-          </NavLink>
+          </SideLink>
         </nav>
       </aside>
       <div className="admin-main">
@@ -53,6 +58,7 @@ export function AdminShell() {
                 <span>{session.userId}</span>
               </div>
             </div>
+            <AccountSettingsButton />
             <button className="btn secondary" onClick={logout}>
               Sign out
             </button>

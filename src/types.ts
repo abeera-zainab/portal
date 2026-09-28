@@ -1,4 +1,4 @@
-export type Role = "admin" | "team_lead" | "officer" | "employee";
+export type Role = "admin" | "team_lead" | "officer" | "employee" | "mto";
 
 export type TeamId = "offensive" | "defensive" | "ops" | "product";
 
@@ -16,6 +16,7 @@ export interface Person {
   active?: boolean;
   joined?: string;
   lateAllowed?: boolean;
+  officer?: boolean;
   workMode?: WorkMode | null;
 }
 
