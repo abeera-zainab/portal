@@ -62,7 +62,7 @@ export function UserManagement() {
     return db.people
       .filter((person) => {
         if (filter === "officer") return person.role === "officer" || Boolean(person.officer);
-        if (filter === "mto") return person.role === "mto";
+        if (filter === "mto") return Boolean(person.mto);
         if (filter === "admin" || filter === "team_lead" || filter === "employee") {
           return person.role === filter;
         }
@@ -165,7 +165,6 @@ export function UserManagement() {
                 <option value="employee">Team</option>
                 <option value="officer">Officer</option>
                 <option value="team_lead">Team lead</option>
-                <option value="mto">MTO</option>
                 <option value="admin">Admin</option>
               </select>
             </label>
@@ -300,7 +299,6 @@ function UserRow({
           <option value="employee">Team</option>
           <option value="officer">Officer</option>
           <option value="team_lead">Team lead</option>
-          <option value="mto">MTO</option>
           <option value="admin">Admin</option>
         </select>
         </div>

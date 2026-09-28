@@ -99,6 +99,8 @@ await pool.query(`
   );
 `);
 
+await pool.query(`UPDATE people SET mto = TRUE, role = 'employee' WHERE role = 'mto'`);
+
 await pool.query(
   `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined)
    VALUES ('PSS001', 'PSS Admin', 'admin', 'admin@pss.local', 'admin123', 'admin', NULL, '{}', TRUE, CURRENT_DATE)
@@ -279,7 +281,7 @@ app.post("/api/people", async (req, res) => {
   const name = String(body.name || "").trim();
   const password = String(body.password || "");
   const role = body.role || "employee";
-  if (!["admin", "team_lead", "officer", "employee", "mto"].includes(role)) {
+  if (!["admin", "team_lead", "officer", "employee"].includes(role)) {
     res.status(400).json({ error: "Choose a valid role." });
     return;
   }
@@ -383,7 +385,7 @@ app.patch("/api/people/:userId", async (req, res) => {
     return;
   }
   const role = req.body.role ?? person.role;
-  if (!["admin", "team_lead", "officer", "employee", "mto"].includes(role)) {
+  if (!["admin", "team_lead", "officer", "employee"].includes(role)) {
     res.status(400).json({ error: "Choose a valid role." });
     return;
   }

@@ -8,7 +8,7 @@ import {
   personTeams,
   roleTags,
   setLateAllowed,
-  setOfficerTag,
+  setPersonTags,
   setPersonActive,
   setWorkMode,
   teamName,
@@ -88,16 +88,34 @@ export function PersonAdjust({ person }: { person: Person }) {
   return (
     <section className="card">
       <h2>Tags and status</h2>
-      <p className="muted">Only tags you turn on are shown on the user list.</p>
+      <p className="muted">Choose one or more tags. A team lead can also be an officer and an MTO.</p>
+      {person.role === "admin" ? null : (
+        <fieldset className="tag-picks">
+          <legend>Tags</legend>
+          <label>
+            <input
+              type="checkbox"
+              checked={isOfficer(person)}
+              onChange={(event) =>
+                void run(() => setPersonTags(person.userId, { officer: event.target.checked, mto: Boolean(person.mto) }))
+              }
+            />
+            Officer
+          </label>
+          <label>
+            <input
+              type="checkbox"
+              checked={Boolean(person.mto)}
+              onChange={(event) =>
+                void run(() => setPersonTags(person.userId, { officer: isOfficer(person), mto: event.target.checked }))
+              }
+            />
+            MTO
+          </label>
+        </fieldset>
+      )}
       {person.role === "admin" ? null : (
         <div className="role-tags">
-          <button
-            type="button"
-            className={isOfficer(person) ? "domain on" : "domain"}
-            onClick={() => void run(() => setOfficerTag(person.userId, !isOfficer(person)))}
-          >
-            Officer
-          </button>
           <button
             type="button"
             className={person.lateAllowed ? "domain on" : "domain"}

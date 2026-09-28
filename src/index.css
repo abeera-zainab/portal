@@ -262,7 +262,17 @@ textarea { min-height: 84px; resize: vertical; }
   color: var(--green);
 }
 .role-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
-.mto-pick { max-width: 220px; margin-bottom: 12px; }
+.tag-picks {
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  margin: 0 0 12px;
+  padding: 12px 14px 14px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.tag-picks legend { font-weight: 700; padding: 0 4px; }
+.tag-picks label { display: flex; align-items: center; gap: 8px; }
 .role-picks { display: grid; gap: 6px; }
 .badge.officer { background: var(--amber-soft); color: var(--amber); }
 .badge.lead { background: var(--green-soft); color: var(--green); }

@@ -38,11 +38,13 @@ import {
 } from "./store";
 
 const roleLabel = (person: Person) => {
-  if (person.role === "team_lead") return person.officer ? "Officer · Team lead" : "Team lead";
-  if (person.role === "mto") return person.officer ? "Officer · MTO" : "MTO";
-  if (person.role === "officer" || person.officer) return "Officer";
   if (person.role === "admin") return "Admin";
-  return "Employee";
+  const parts: string[] = [];
+  if (person.role === "officer" || person.officer) parts.push("Officer");
+  if (person.role === "team_lead") parts.push("Team lead");
+  if (person.mto) parts.push("MTO");
+  if (!parts.length) parts.push("Employee");
+  return parts.join(" · ");
 };
 
 export default function App() {

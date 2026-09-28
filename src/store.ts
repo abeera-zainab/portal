@@ -84,7 +84,7 @@ export const roleTags = (person: Person): { id: string; label: string }[] => {
   const tags: { id: string; label: string }[] = [];
   if (isOfficer(person)) tags.push({ id: "officer", label: "Officer" });
   if (person.role === "team_lead") tags.push({ id: "team_lead", label: "Team lead" });
-  if (person.role === "mto") tags.push({ id: "mto", label: "MTO" });
+  if (person.mto) tags.push({ id: "mto", label: "MTO" });
   if (!tags.length) tags.push({ id: "employee", label: "Team" });
   return tags;
 };
@@ -225,20 +225,20 @@ export const setLateAllowed = async (userId: string, lateAllowed: boolean) => {
   await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", { lateAllowed });
 };
 
-export const setOfficerTag = async (userId: string, officer: boolean) => {
+export const setPersonTags = async (userId: string, tags: { officer: boolean; mto: boolean }) => {
   const person = database.people.find((item) => item.userId === userId);
   if (!person) throw new Error("Person not found.");
-  if (person.role === "team_lead" || person.role === "mto") {
-    await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", { officer });
-    return;
-  }
   const teams = personTeams(person);
-  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", {
-    role: officer ? "officer" : "employee",
-    officer,
-    teams,
-    team: teams[0] ?? null,
-  });
+  const body: { officer: boolean; mto: boolean; role?: Role; teams?: TeamId[]; team?: TeamId | null } = {
+    officer: tags.officer,
+    mto: tags.mto,
+  };
+  if (!tags.officer && person.role === "officer") {
+    body.role = "employee";
+    body.teams = teams;
+    body.team = teams[0] ?? null;
+  }
+  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", body);
 };
 
 export const setWorkMode = async (userId: string, workMode: WorkMode | null) => {
