@@ -1,7 +1,7 @@
 import express from "express";
 import pg from "pg";
 import EmbeddedPostgres from "embedded-postgres";
-import { mkdirSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -106,6 +106,26 @@ await pool.query(
    VALUES ('PSS001', 'PSS Admin', 'admin', 'admin@pss.local', 'admin123', 'admin', NULL, '{}', TRUE, CURRENT_DATE)
    ON CONFLICT (user_id) DO NOTHING`
 );
+
+await pool.query(`CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
+const bundledSeed = await pool.query(`SELECT 1 FROM app_meta WHERE key = 'bundled_seed'`);
+const seedPath = path.join(__dirname, "seed.sql");
+if (!bundledSeed.rowCount && existsSync(seedPath)) {
+  const seedSql = readFileSync(seedPath, "utf8");
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(seedSql);
+    await client.query(`INSERT INTO app_meta (key, value) VALUES ('bundled_seed', '1')`);
+    await client.query("COMMIT");
+    console.log("Loaded the bundled database.");
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
 
 const localDate = (value = new Date()) => {
   const year = value.getFullYear();
