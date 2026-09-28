@@ -169,9 +169,6 @@ function Login() {
         <button className="btn" style={{ marginTop: 16 }} type="submit">
           Sign in
         </button>
-        <div className="hint">
-          First admin: username <strong>admin</strong>, password <strong>admin123</strong>, user ID PSS001.
-        </div>
       </form>
     </div>
   );
