@@ -39,7 +39,7 @@ const tooltipStyle = {
   fontSize: 13,
 };
 
-type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending";
+type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending" | "members";
 
 type Focus = {
   title: string;
@@ -119,7 +119,7 @@ export function Dashboard() {
         else if (status === "leave") counts.leave += 1;
         else counts.notIn += 1;
       }
-      return { team: team.name.replace(/^PSS /, ""), teamId: team.id, ...counts };
+      return { team: team.name, teamId: team.id, ...counts };
     });
 
     const trend = periodDays(range).map((date) => {
@@ -135,13 +135,18 @@ export function Dashboard() {
     });
 
     return {
-      users: db.people.length,
       employees: staff.length,
       present: today.onTime + today.late,
       late: today.late,
       leave: today.leave,
       notIn: today.notIn,
       pending: db.leave.filter((request) => request.status === "pending").length,
+      teamTotal: staff.filter((person) => personTeams(person).length > 0).length,
+      teams: TEAMS.map((team) => ({
+        id: team.id,
+        name: team.name,
+        count: staff.filter((person) => personTeams(person).includes(team.id)).length,
+      })),
       todayMix,
       byTeam,
       trend,
@@ -168,6 +173,9 @@ export function Dashboard() {
         .map((request) => db.people.find((person) => person.userId === request.userId))
         .filter((person): person is Person => Boolean(person));
     }
+    if (focus.kind === "members") {
+      return staff.filter((person) => !focus.teamId || personTeams(person).includes(focus.teamId));
+    }
     return staff.filter((person) => {
       if (focus.teamId && !personTeams(person).includes(focus.teamId)) return false;
       const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when);
@@ -178,6 +186,9 @@ export function Dashboard() {
   }, [db, focus, staff]);
 
   const grouped = useMemo(() => {
+    if (focus?.kind === "members" && focus.teamId) {
+      return [[teamName(focus.teamId), roster] as [string, Person[]]];
+    }
     const groups = new Map<string, Person[]>();
     for (const person of roster) {
       const label = personTeams(person).map((team) => teamName(team)).join(", ") || "No team";
@@ -186,7 +197,7 @@ export function Dashboard() {
       groups.set(label, list);
     }
     return [...groups.entries()].sort((left, right) => left[0].localeCompare(right[0]));
-  }, [roster]);
+  }, [focus, roster]);
 
   const todayLabel = new Date().toLocaleDateString(undefined, {
     weekday: "long",
@@ -214,34 +225,25 @@ export function Dashboard() {
       </div>
 
       <div className="dash-stats">
-        <article className="card stat">
-          <span>Users</span>
-          <strong>{stats.users}</strong>
-        </article>
-        <article className="card stat">
-          <span>Employees</span>
-          <strong>{stats.employees}</strong>
-        </article>
-        <button type="button" className={focus?.kind === "present" && !focus.teamId ? "card stat dash-hit on" : "card stat dash-hit"} onClick={() => openToday("present", "Present today")}>
-          <span>Present</span>
-          <strong className="tone-green">{stats.present}</strong>
+        <button
+          type="button"
+          className={focus?.kind === "members" && !focus.teamId ? "card stat dash-hit on" : "card stat dash-hit"}
+          onClick={() => openToday("members", "All teams")}
+        >
+          <span>Total</span>
+          <strong>{stats.teamTotal}</strong>
         </button>
-        <button type="button" className={focus?.kind === "late" && !focus.teamId ? "card stat dash-hit on" : "card stat dash-hit"} onClick={() => openToday("late", "Late check-ins today")}>
-          <span>Late check-ins</span>
-          <strong className="tone-amber">{stats.late}</strong>
-        </button>
-        <button type="button" className={focus?.kind === "leave" && !focus.teamId && todayKey(focus.when) === todayKey() ? "card stat dash-hit on" : "card stat dash-hit"} onClick={() => openToday("leave", "On leave today")}>
-          <span>On leave</span>
-          <strong className="tone-leave">{stats.leave}</strong>
-        </button>
-        <button type="button" className={focus?.kind === "not_in" && !focus.teamId ? "card stat dash-hit on" : "card stat dash-hit"} onClick={() => openToday("not_in", "Absent today")}>
-          <span>Absent</span>
-          <strong>{stats.notIn}</strong>
-        </button>
-        <button type="button" className={focus?.kind === "pending" ? "card stat dash-hit on" : "card stat dash-hit"} onClick={() => openToday("pending", "Pending leave")}>
-          <span>Pending leave</span>
-          <strong className="tone-amber">{stats.pending}</strong>
-        </button>
+        {stats.teams.map((team) => (
+          <button
+            key={team.id}
+            type="button"
+            className={focus?.kind === "members" && focus.teamId === team.id ? "card stat dash-hit on" : "card stat dash-hit"}
+            onClick={() => openToday("members", team.name, team.id)}
+          >
+            <span>{team.name}</span>
+            <strong className="tone-green">{team.count}</strong>
+          </button>
+        ))}
       </div>
 
       <div className="dash-charts">
@@ -354,7 +356,7 @@ export function Dashboard() {
           <h2>{focus.title}</h2>
           <p className="muted">
             {roster.length} {roster.length === 1 ? "person" : "people"}
-            {focus.kind === "not_in" ? ", grouped by team." : "."}
+            {focus.kind === "not_in" || (focus.kind === "members" && !focus.teamId) ? ", grouped by team." : "."}
           </p>
           {grouped.length === 0 ? (
             <p className="muted">No one matches this view.</p>

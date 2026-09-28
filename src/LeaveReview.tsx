@@ -105,5 +105,31 @@ export function LeaveInbox({
 export function LeavePage() {
   const db = useDatabase();
   const session = useSession();
-  return <LeaveInbox requests={db.leave} reviewerId={session?.userId ?? ""} title="Leave requests" />;
+  const accepted = db.leave.filter((request) => request.status === "approved").length;
+  const rejected = db.leave.filter((request) => request.status === "rejected").length;
+  return (
+    <section className="manage">
+      <div className="manage-head">
+        <div>
+          <h1>Leave</h1>
+          <p className="muted">Accepted and rejected requests are counted here.</p>
+        </div>
+      </div>
+      <div className="dash-stats">
+        <article className="card stat">
+          <span>Total leaves</span>
+          <strong>{db.leave.length}</strong>
+        </article>
+        <article className="card stat">
+          <span>Accepted</span>
+          <strong className="tone-green">{accepted}</strong>
+        </article>
+        <article className="card stat">
+          <span>Rejected</span>
+          <strong className="tone-amber">{rejected}</strong>
+        </article>
+      </div>
+      <LeaveInbox requests={db.leave} reviewerId={session?.userId ?? ""} title="Leave requests" />
+    </section>
+  );
 }

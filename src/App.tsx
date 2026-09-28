@@ -256,6 +256,11 @@ function LeaveCard({ person }: { person: Person }) {
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    const today = todayKey();
+    if (from < today) {
+      setError("You cannot request leave for a past date.");
+      return;
+    }
     try {
       await requestLeave(person.userId, from, to, reason);
       setReason("");
@@ -264,6 +269,8 @@ function LeaveCard({ person }: { person: Person }) {
       setError(err instanceof Error ? err.message : "Could not request leave.");
     }
   };
+
+  const today = todayKey();
 
   return (
     <section className="card">
@@ -276,11 +283,11 @@ function LeaveCard({ person }: { person: Person }) {
       <form onSubmit={submit} className="row" style={{ marginTop: 14 }}>
         <label>
           From
-          <input type="date" value={from} onChange={(event) => setFrom(event.target.value)} required />
+          <input type="date" min={today} value={from} onChange={(event) => setFrom(event.target.value)} required />
         </label>
         <label>
           To
-          <input type="date" value={to} onChange={(event) => setTo(event.target.value)} required />
+          <input type="date" min={from && from > today ? from : today} value={to} onChange={(event) => setTo(event.target.value)} required />
         </label>
         <label style={{ flex: 1, minWidth: 220 }}>
           Reason
@@ -342,7 +349,7 @@ function TeamTools({ lead }: { lead: Person }) {
     <>
       <section className="card">
         <h2>Team</h2>
-        <p className="muted">Today’s attendance. Move someone onto another PSS team.</p>
+        <p className="muted">Today’s attendance. Move someone onto another team.</p>
         {error ? <p className="error">{error}</p> : null}
         <table>
           <thead>

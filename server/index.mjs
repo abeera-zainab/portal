@@ -336,6 +336,32 @@ app.post("/api/people", async (req, res) => {
   res.json({ state: await readState() });
 });
 
+const accountFields = (person, body) => {
+  let name = person.name;
+  let email = person.email;
+  let username = person.username;
+  let password = person.password;
+  if (body.name !== undefined) {
+    name = String(body.name || "").trim().replace(/\s+/g, " ");
+    if (name.length < 2) return { error: "Enter the person's name." };
+  }
+  if (body.email !== undefined) {
+    email = String(body.email || "").trim().toLowerCase();
+    if (!email.includes("@")) return { error: "Enter a valid email." };
+  }
+  if (body.username !== undefined) {
+    username = String(body.username || "").trim().toLowerCase().replace(/\s+/g, "");
+    if (!/^[a-z0-9._]{3,32}$/.test(username)) {
+      return { error: "Username must be 3–32 letters, numbers, dots, or underscores." };
+    }
+  }
+  if (body.password !== undefined && String(body.password).length > 0) {
+    password = String(body.password);
+    if (password.length < 6) return { error: "Password must be at least 6 characters." };
+  }
+  return { name, email, username, password };
+};
+
 app.patch("/api/people/:userId", async (req, res) => {
   const who = await actor(req);
   if (!who || (who.role !== "admin" && who.role !== "team_lead")) {
@@ -377,10 +403,23 @@ app.patch("/api/people/:userId", async (req, res) => {
     let officer = req.body.officer === undefined ? person.officer : Boolean(req.body.officer);
     const mto = req.body.mto === undefined ? person.mto : Boolean(req.body.mto);
     if (role === "officer") officer = false;
-    await pool.query(
-      `UPDATE people SET role = $2, active = $3, late_allowed = $4, work_mode = $5, officer = $6, mto = $7 WHERE user_id = $1`,
-      [userId, role, active, lateAllowed, workMode, officer, mto]
-    );
+    const account = accountFields(person, req.body || {});
+    if (account.error) {
+      res.status(400).json({ error: account.error });
+      return;
+    }
+    try {
+      await pool.query(
+        `UPDATE people SET role = $2, active = $3, late_allowed = $4, work_mode = $5, officer = $6, mto = $7, email = $8, username = $9, password = $10, name = $11 WHERE user_id = $1`,
+        [userId, role, active, lateAllowed, workMode, officer, mto, account.email, account.username, account.password, account.name]
+      );
+    } catch (error) {
+      if (error && error.code === "23505") {
+        res.status(400).json({ error: "That username or email is already in use." });
+        return;
+      }
+      throw error;
+    }
     res.json({ state: await readState() });
     return;
   }
@@ -421,10 +460,23 @@ app.patch("/api/people/:userId", async (req, res) => {
     res.status(400).json({ error: "Choose work from home, remote, or neither." });
     return;
   }
-  await pool.query(
-    `UPDATE people SET role = $2, team = $3, teams = $4, active = $5, late_allowed = $6, work_mode = $7, officer = $8, mto = $9 WHERE user_id = $1`,
-    [userId, role, teams[0] ?? null, teams, active, lateAllowed, workMode, officer, mto]
-  );
+  const account = accountFields(person, req.body || {});
+  if (account.error) {
+    res.status(400).json({ error: account.error });
+    return;
+  }
+  try {
+    await pool.query(
+      `UPDATE people SET role = $2, team = $3, teams = $4, active = $5, late_allowed = $6, work_mode = $7, officer = $8, mto = $9, email = $10, username = $11, password = $12, name = $13 WHERE user_id = $1`,
+      [userId, role, teams[0] ?? null, teams, active, lateAllowed, workMode, officer, mto, account.email, account.username, account.password, account.name]
+    );
+  } catch (error) {
+    if (error && error.code === "23505") {
+      res.status(400).json({ error: "That username or email is already in use." });
+      return;
+    }
+    throw error;
+  }
   res.json({ state: await readState() });
 });
 
@@ -455,6 +507,10 @@ app.post("/api/leave", async (req, res) => {
   }
   if (to < from) {
     res.status(400).json({ error: "The end date cannot be before the start date." });
+    return;
+  }
+  if (from < localDate()) {
+    res.status(400).json({ error: "You cannot request leave for a past date." });
     return;
   }
   const id = crypto.randomUUID();

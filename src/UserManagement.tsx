@@ -11,7 +11,6 @@ import {
   isPersonActive,
   personTeams,
   setPersonRole,
-  teamName,
   togglePersonTeam,
   useDatabase,
   useSession,
@@ -26,7 +25,7 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "officer", label: "Officers" },
   { id: "mto", label: "MTO" },
   { id: "employee", label: "Team" },
-  ...TEAMS.map((team) => ({ id: team.id, label: team.name.replace("PSS ", "PSS ") })),
+  ...TEAMS.map((team) => ({ id: team.id, label: team.name })),
 ];
 
 const initials = (name: string) => name.trim().charAt(0).toUpperCase() || "?";
@@ -316,7 +315,7 @@ function UserRow({
                 onClick={() => onTeam(team.id)}
                 title={teams.includes(team.id) ? `Remove ${team.name}` : `Add ${team.name}`}
               >
-                {teamName(team.id).replace("Development", "Product")}
+                {team.name}
               </button>
             ))}
           </div>

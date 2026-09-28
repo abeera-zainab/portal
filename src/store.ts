@@ -2,10 +2,10 @@ import { useSyncExternalStore } from "react";
 import type { Database, Person, Role, TeamId, WorkMode } from "./types";
 
 export const TEAMS: { id: TeamId; name: string }[] = [
-  { id: "offensive", name: "PSS Offensive" },
-  { id: "defensive", name: "PSS Defensive" },
-  { id: "ops", name: "PSS Ops" },
-  { id: "product", name: "PSS Product Development" },
+  { id: "offensive", name: "Offensive" },
+  { id: "defensive", name: "Defensive" },
+  { id: "ops", name: "INT" },
+  { id: "product", name: "Product Development" },
 ];
 
 const SESSION_KEY = "pss-attendance-session";
@@ -219,6 +219,13 @@ export const togglePersonTeam = async (userId: string, team: TeamId) => {
 
 export const setPersonActive = async (userId: string, active: boolean) => {
   await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", { active });
+};
+
+export const updatePersonAccount = async (
+  userId: string,
+  input: { name: string; email: string; username: string; password?: string }
+) => {
+  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", input);
 };
 
 export const setLateAllowed = async (userId: string, lateAllowed: boolean) => {

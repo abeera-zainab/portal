@@ -57,7 +57,7 @@ export function LeaveNotifications({ person }: { person: Person }) {
         <div className="note-panel" role="region" aria-label="Leave notifications">
           <strong>Leave</strong>
           {items.length === 0 ? (
-            <p className="muted">No leave requests waiting.</p>
+            <p className="muted">No leave notifications.</p>
           ) : (
             <div className="note-list">
               {items.map((item) => (
@@ -91,15 +91,41 @@ export function AccountSettingsButton() {
 function leaveAlerts(
   person: Person,
   people: Person[],
-  leave: { id: string; userId: string; from: string; to: string; status: string }[]
+  leave: { id: string; userId: string; from: string; to: string; status: string; rejectionReason?: string }[]
 ) {
-  const pending = leave.filter((request) => request.status === "pending");
   const range = (from: string, to: string) => (to !== from ? `${from} to ${to}` : from);
   const items: { id: string; title: string; detail: string; href: string }[] = [];
 
+  for (const request of leave) {
+    if (request.userId !== person.userId) continue;
+    const dates = range(request.from, request.to);
+    if (request.status === "pending") {
+      items.push({
+        id: request.id,
+        title: person.role === "team_lead" || person.role === "admin" ? "Your leave is with an admin" : "Your leave request is pending",
+        detail: dates,
+        href: "/leave",
+      });
+    } else if (request.status === "approved") {
+      items.push({
+        id: request.id,
+        title: "Your leave was approved",
+        detail: dates,
+        href: "/leave",
+      });
+    } else if (request.status === "rejected") {
+      items.push({
+        id: request.id,
+        title: "Your leave was rejected",
+        detail: request.rejectionReason ? `${dates}. ${request.rejectionReason}` : dates,
+        href: "/leave",
+      });
+    }
+  }
+
+  const pending = leave.filter((request) => request.status === "pending" && request.userId !== person.userId);
   if (person.role === "admin") {
     for (const request of pending) {
-      if (request.userId === person.userId) continue;
       const owner = people.find((item) => item.userId === request.userId);
       const name = owner?.name ?? request.userId;
       items.push({
@@ -112,8 +138,7 @@ function leaveAlerts(
   } else if (person.role === "team_lead") {
     for (const request of pending) {
       const owner = people.find((item) => item.userId === request.userId);
-      if (!owner || owner.userId === person.userId) continue;
-      if (owner.role === "team_lead" || owner.role === "admin") continue;
+      if (!owner || owner.role === "team_lead" || owner.role === "admin") continue;
       if (!personTeams(person).some((team) => personTeams(owner).includes(team))) continue;
       items.push({
         id: request.id,
@@ -122,16 +147,6 @@ function leaveAlerts(
         href: "/team",
       });
     }
-  }
-
-  const own = pending.find((request) => request.userId === person.userId);
-  if (own) {
-    items.unshift({
-      id: own.id,
-      title: person.role === "team_lead" || person.role === "admin" ? "Your leave is with an admin" : "Your leave request is pending",
-      detail: range(own.from, own.to),
-      href: "/leave",
-    });
   }
 
   return items;

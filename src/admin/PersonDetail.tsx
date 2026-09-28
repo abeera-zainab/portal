@@ -1,4 +1,5 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Person, WorkMode } from "../types";
 import {
@@ -8,10 +9,11 @@ import {
   personTeams,
   roleTags,
   setLateAllowed,
-  setPersonTags,
   setPersonActive,
+  setPersonTags,
   setWorkMode,
   teamName,
+  updatePersonAccount,
   useDatabase,
   useSession,
 } from "../store";
@@ -154,6 +156,165 @@ export function PersonAdjust({ person }: { person: Person }) {
   );
 }
 
+function PencilIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+      <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+      <path d="M13.5 6.5l3 3" />
+    </svg>
+  );
+}
+
+function AccountCard({ person }: { person: Person }) {
+  const session = useSession();
+  const canEdit = canAdjustPerson(session, person);
+  const [editing, setEditing] = useState(false);
+  const [name, setName] = useState(person.name);
+  const [email, setEmail] = useState(person.email);
+  const [username, setUsername] = useState(person.username);
+  const [password, setPassword] = useState("");
+  const [confirm, setConfirm] = useState("");
+  const [error, setError] = useState("");
+  const [saved, setSaved] = useState("");
+  const active = isPersonActive(person);
+
+  useEffect(() => {
+    setEditing(false);
+    setPassword("");
+    setConfirm("");
+    setError("");
+    setSaved("");
+  }, [person.userId]);
+
+  useEffect(() => {
+    if (editing) return;
+    setName(person.name);
+    setEmail(person.email);
+    setUsername(person.username);
+  }, [editing, person.name, person.email, person.username]);
+
+  const save = async (event: FormEvent) => {
+    event.preventDefault();
+    if (password && password !== confirm) {
+      setSaved("");
+      setError("The new passwords do not match.");
+      return;
+    }
+    if (password && password.length < 6) {
+      setSaved("");
+      setError("Password must be at least 6 characters.");
+      return;
+    }
+    try {
+      setError("");
+      await updatePersonAccount(person.userId, {
+        name,
+        email,
+        username,
+        ...(password ? { password } : {}),
+      });
+      setPassword("");
+      setConfirm("");
+      setSaved("Account updated.");
+      setEditing(false);
+    } catch (err) {
+      setSaved("");
+      setError(err instanceof Error ? err.message : "Could not update this account.");
+    }
+  };
+
+  return (
+    <section className="card">
+      <div className="card-title">
+        <h2>Account</h2>
+        {canEdit ? (
+          <button
+            type="button"
+            className={editing ? "icon-btn active" : "icon-btn"}
+            aria-label="Edit account"
+            aria-expanded={editing}
+            onClick={() => setEditing((current) => !current)}
+          >
+            <PencilIcon />
+          </button>
+        ) : null}
+      </div>
+      <dl className="profile-facts">
+        <div>
+          <dt>User ID</dt>
+          <dd>{person.userId}</dd>
+        </div>
+        <div>
+          <dt>Username</dt>
+          <dd>@{person.username}</dd>
+        </div>
+        <div>
+          <dt>Email</dt>
+          <dd>{person.email}</dd>
+        </div>
+        <div>
+          <dt>Teams</dt>
+          <dd>
+            {personTeams(person).length
+              ? personTeams(person).map((team) => (
+                  <span key={team} className="badge team">
+                    {teamName(team)}
+                  </span>
+                ))
+              : "—"}
+          </dd>
+        </div>
+        <div>
+          <dt>Status</dt>
+          <dd>
+            <span className={active ? "status on" : "status off"}>{active ? "Active" : "Inactive"}</span>
+          </dd>
+        </div>
+        <div>
+          <dt>Joined</dt>
+          <dd>{person.joined || "—"}</dd>
+        </div>
+      </dl>
+      {editing ? (
+        <form onSubmit={save} className="profile-form">
+          <label>
+            Name
+            <input value={name} onChange={(event) => setName(event.target.value)} required />
+          </label>
+          <label>
+            Email
+            <input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </label>
+          <label>
+            Username
+            <input value={username} onChange={(event) => setUsername(event.target.value)} required />
+          </label>
+          <label>
+            New password
+            <input type="password" value={password} autoComplete="new-password" onChange={(event) => setPassword(event.target.value)} />
+          </label>
+          <label>
+            Confirm password
+            <input type="password" value={confirm} autoComplete="new-password" onChange={(event) => setConfirm(event.target.value)} />
+          </label>
+          <button className="btn" type="submit">
+            Save details
+          </button>
+        </form>
+      ) : null}
+      {saved ? <p className="muted">{saved}</p> : null}
+      {error ? <p className="error">{error}</p> : null}
+    </section>
+  );
+}
+
+const initials = (name: string) =>
+  name
+    .split(" ")
+    .slice(0, 2)
+    .map((part) => part.charAt(0).toUpperCase())
+    .join("") || "?";
+
 export function UserDetail({ backTo, backLabel }: { backTo: string; backLabel: string }) {
   const { userId = "" } = useParams();
   const db = useDatabase();
@@ -170,35 +331,25 @@ export function UserDetail({ backTo, backLabel }: { backTo: string; backLabel: s
     );
   }
 
-  const active = isPersonActive(person);
-
   return (
     <section className="manage">
       <Link className="back-link" to={backTo}>
         {backLabel}
       </Link>
-      <div className="manage-head">
+      <header className="profile-head">
+        <span className="avatar lg" aria-hidden="true">
+          {initials(person.name)}
+        </span>
         <div>
           <h1>{person.name}</h1>
-          <p className="muted">
-            {person.userId} · @{person.username} · {person.email}
-            {personTeams(person).length
-              ? ` · ${personTeams(person).map((team) => teamName(team)).join(", ")}`
-              : ""}
-          </p>
           <AssignedTags person={person} />
+          <p className="muted">{person.userId}</p>
         </div>
         <Link className="btn secondary" to={`/attendance/${person.userId}`}>
           Attendance report
         </Link>
-      </div>
-      <div className="card">
-        <h2>Account</h2>
-        <p>
-          <span className={active ? "status on" : "status off"}>{active ? "Active" : "Inactive"}</span>
-        </p>
-        <p className="muted">Joined {person.joined || "—"}</p>
-      </div>
+      </header>
+      <AccountCard person={person} />
       <PersonAdjust person={person} />
     </section>
   );
