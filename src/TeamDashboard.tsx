@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
 import type { Person, TeamId } from "./types";
 import { monthTotals } from "./attendanceStats";
 import {
@@ -97,6 +98,8 @@ export function TeamDashboard({ lead }: { lead: Person }) {
       return {
         day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
         when: date.getTime(),
+        onTime: counts.onTime,
+        late: counts.late,
         present: counts.onTime + counts.late,
         leave: counts.leave,
         absent: counts.notIn,
@@ -247,7 +250,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
           <div className="calendar-head">
             <div>
               <h2>{range === "week" ? "This week" : "This month"}</h2>
-              <p className="muted">Click a point to see who was present, on leave, or absent.</p>
+              <p className="muted">Bars show each status. The line is the present trend. Click a bar to see who it includes.</p>
             </div>
             <div className="filters">
               <button type="button" className={range === "week" ? "chip on" : "chip"} onClick={() => setRange("week")}>
@@ -259,39 +262,17 @@ export function TeamDashboard({ lead }: { lead: Person }) {
             </div>
           </div>
           <div className="chart-box">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={stats.trend}
-                onClick={(state) => {
-                  const point = stats.trend.find((item) => item.day === state.activeLabel);
-                  if (!point) return;
-                  const series = String(state.activeDataKey ?? "present");
-                  const kind = series === "leave" ? "leave" : series === "absent" ? "not_in" : "present";
-                  open({
-                    kind,
-                    when: new Date(point.when),
-                    title: `${series === "leave" ? "On leave" : series === "absent" ? "Absent" : "Present"} · ${point.day}`,
-                  });
-                }}
-              >
-                <CartesianGrid stroke="#e4d9c8" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: "#6d645b", fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fill: "#6d645b", fontSize: 12 }} width={32} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend
-                  onClick={(item) => {
-                    const latest = stats.trend[stats.trend.length - 1];
-                    if (!latest) return;
-                    const series = String(item.dataKey ?? item.value);
-                    const kind = series === "leave" ? "leave" : series === "absent" ? "not_in" : "present";
-                    open({ kind, when: new Date(latest.when), title: `${item.value} · ${latest.day}` });
-                  }}
-                />
-                <Line type="monotone" dataKey="present" name="Present" stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="leave" name="On leave" stroke={LEAVE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-                <Line type="monotone" dataKey="absent" name="Absent" stroke={MUTED} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            <PeriodChart
+              data={stats.trend}
+              bars={ATTENDANCE_BARS}
+              trendKey="present"
+              trendName="Present trend"
+              onBarClick={(key, row) => {
+                const kind = key === "onTime" ? "on_time" : key === "late" ? "late" : key === "leave" ? "leave" : "not_in";
+                const label = key === "onTime" ? "On time" : key === "late" ? "Late" : key === "leave" ? "On leave" : "Absent";
+                open({ kind, when: new Date(Number(row.when)), title: `${label} · ${row.day}` });
+              }}
+            />
           </div>
         </article>
       </div>

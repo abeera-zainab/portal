@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
 import type { Person } from "./types";
 import { AttendanceCalendar } from "./AttendanceCalendar";
 import { attendanceTotals } from "./attendanceStats";
@@ -57,6 +58,8 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
     const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
     return {
       day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      onTime: status === "on_time" ? 1 : 0,
+      late: status === "late" ? 1 : 0,
       present: status === "on_time" || status === "late" ? 1 : 0,
       leave: status === "leave" ? 1 : 0,
       absent: status === "not_in" ? 1 : 0,
@@ -119,7 +122,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
           <div className="calendar-head">
             <div>
               <h2>{range === "week" ? "This week" : "This month"}</h2>
-              <p className="muted">Each day is present, on leave, or absent.</p>
+              <p className="muted">Bars show each day. The line is the present trend.</p>
             </div>
             <div className="filters">
               <button type="button" className={range === "week" ? "chip on" : "chip"} onClick={() => setRange("week")}>
@@ -131,18 +134,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
             </div>
           </div>
           <div className="chart-box">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={trend}>
-                <CartesianGrid stroke="#e4d9c8" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: "#6d645b", fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fill: "#6d645b", fontSize: 12 }} width={32} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Line type="monotone" dataKey="present" name="Present" stroke={GREEN} strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="leave" name="On leave" stroke={LEAVE} strokeWidth={2} dot={{ r: 3 }} />
-                <Line type="monotone" dataKey="absent" name="Absent" stroke={MUTED} strokeWidth={2} dot={{ r: 3 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            <PeriodChart data={trend} bars={ATTENDANCE_BARS} trendKey="present" trendName="Present trend" />
           </div>
         </article>
       </div>

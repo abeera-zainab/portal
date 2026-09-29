@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
+import { PeriodChart } from "./PeriodChart";
 import type { LeaveRequest, Person } from "./types";
 import { isOnLeave, personTeams, reviewableLeave, reviewLeave, teamName, teamRoster, todayKey, useDatabase, useSession } from "./store";
 
@@ -157,7 +158,7 @@ export function TeamLeaveBoard({ lead }: { lead: Person }) {
           <div className="calendar-head">
             <div>
               <h2>{range === "week" ? "This week" : "This month"}</h2>
-              <p className="muted">People on approved leave. Click a point to see who.</p>
+              <p className="muted">Bars show people on approved leave. The line is the leave trend. Click a bar to see who.</p>
             </div>
             <div className="filters">
               <button type="button" className={range === "week" ? "chip on" : "chip"} onClick={() => setRange("week")}>
@@ -169,23 +170,14 @@ export function TeamLeaveBoard({ lead }: { lead: Person }) {
             </div>
           </div>
           <div className="chart-box">
-            <ResponsiveContainer width="100%" height="100%">
-              <LineChart
-                data={trend}
-                onClick={(state) => {
-                  const point = trend.find((item) => item.day === state.activeLabel);
-                  if (!point) return;
-                  open({ kind: "day", day: point.when, title: `On leave · ${point.day}` });
-                }}
-              >
-                <CartesianGrid stroke="#e4d9c8" vertical={false} />
-                <XAxis dataKey="day" tick={{ fill: "#6d645b", fontSize: 12 }} />
-                <YAxis allowDecimals={false} tick={{ fill: "#6d645b", fontSize: 12 }} width={32} />
-                <Tooltip contentStyle={tooltipStyle} />
-                <Legend />
-                <Line type="monotone" dataKey="onLeave" name="On leave" stroke={LEAVE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
-              </LineChart>
-            </ResponsiveContainer>
+            <PeriodChart
+              data={trend}
+              bars={[{ key: "onLeave", name: "On leave", color: LEAVE }]}
+              trendKey="onLeave"
+              trendName="Leave trend"
+              trendColor={LEAVE}
+              onBarClick={(_key, row) => open({ kind: "day", day: String(row.when), title: `On leave · ${row.day}` })}
+            />
           </div>
         </article>
       </div>
