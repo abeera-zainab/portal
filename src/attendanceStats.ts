@@ -33,3 +33,25 @@ export function attendanceTotals(person: Person, attendance: Database["attendanc
   }
   return { total: present + absent + leaves, present, absent, leaves, late };
 }
+
+export function monthTotals(person: Person, attendance: Database["attendance"], leave: Database["leave"], month = new Date()) {
+  const today = todayKey();
+  const monthStart = todayKey(new Date(month.getFullYear(), month.getMonth(), 1));
+  const start = person.joined && person.joined > monthStart ? person.joined : monthStart;
+  let present = 0;
+  let absent = 0;
+  let leaves = 0;
+  let late = 0;
+  if (start <= today) {
+    for (const day of eachDay(start, today)) {
+      const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), Boolean(person.lateAllowed));
+      if (status === "leave") leaves += 1;
+      else if (status === "late") {
+        present += 1;
+        late += 1;
+      } else if (status === "on_time") present += 1;
+      else absent += 1;
+    }
+  }
+  return { total: present + absent + leaves, present, absent, leaves, late };
+}

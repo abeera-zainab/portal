@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis, CartesianGrid } from "recharts";
 import type { Person, TeamId } from "./types";
+import { monthTotals } from "./attendanceStats";
 import {
   attendanceStatus,
   isOnLeave,
@@ -66,7 +67,7 @@ const kindFromLabel = (label: string): Kind => {
 
 export function TeamDashboard({ lead }: { lead: Person }) {
   const db = useDatabase();
-  const [range, setRange] = useState<"week" | "month">("week");
+  const [range, setRange] = useState<"week" | "month">("month");
   const [focus, setFocus] = useState<Focus | null>(null);
   const members = useMemo(() => teamRoster(lead, db.people), [db.people, lead]);
   const leadTeams = personTeams(lead);
@@ -294,6 +295,53 @@ export function TeamDashboard({ lead }: { lead: Person }) {
           </div>
         </article>
       </div>
+
+      <article className="card">
+        <h2>This month</h2>
+        <p className="muted">
+          {new Date().toLocaleDateString(undefined, { month: "long", year: "numeric" })}. Present, absent, leave, and late days for each person.
+        </p>
+        <div className="table-card month-wrap">
+          <table className="month-table">
+            <thead>
+              <tr>
+                <th>Person</th>
+                <th>Present</th>
+                <th>Absent</th>
+                <th>On leave</th>
+                <th>Late</th>
+              </tr>
+            </thead>
+            <tbody>
+              {members.length === 0 ? (
+                <tr>
+                  <td colSpan={5}>No one is on your team yet.</td>
+                </tr>
+              ) : (
+                [...members]
+                  .sort((left, right) => left.name.localeCompare(right.name))
+                  .map((person) => {
+                    const totals = monthTotals(person, db.attendance, db.leave);
+                    return (
+                      <tr key={person.userId}>
+                        <td>
+                          <Link className="name-btn" to={`/users/${person.userId}`}>
+                            {person.name}
+                          </Link>
+                          <div className="muted">{person.userId}</div>
+                        </td>
+                        <td>{totals.present}</td>
+                        <td>{totals.absent}</td>
+                        <td>{totals.leaves}</td>
+                        <td>{totals.late}</td>
+                      </tr>
+                    );
+                  })
+              )}
+            </tbody>
+          </table>
+        </div>
+      </article>
 
       {focus ? (
         <article className="card roster">

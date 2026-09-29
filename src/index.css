@@ -180,6 +180,10 @@ button { cursor: pointer; }
   overflow: auto;
 }
 .table-card table { min-width: 980px; }
+.table-card.month-wrap { border: 0; border-radius: 0; background: transparent; }
+.table-card.month-wrap table { min-width: 640px; }
+.month-table th:nth-child(n + 2),
+.month-table td:nth-child(n + 2) { text-align: center; }
 .report-table { min-width: 1180px; font-size: 16px; }
 .report-table th { font-size: 13px; }
 .report-table .badge { font-size: 14px; padding: 5px 12px; }
