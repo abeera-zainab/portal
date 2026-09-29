@@ -154,7 +154,7 @@ ON CONFLICT (user_id) DO UPDATE SET
   mto = EXCLUDED.mto;
 
 INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, work_mode, officer, mto)
-VALUES ('PSS010', 'Yousaf Sani', 'yousafsani', 'yousafsani@local.pss', '123123123', 'team_lead', 'offensive', ARRAY['offensive']::text[], TRUE, '2026-09-27', FALSE, NULL, FALSE, FALSE)
+VALUES ('PSS010', 'Yousaf Sani', 'yousafsani', 'yousafsani@local.pss', '123123123', 'team_lead', 'offensive', ARRAY['offensive']::text[], TRUE, '2026-09-27', TRUE, NULL, FALSE, FALSE)
 ON CONFLICT (user_id) DO UPDATE SET
   name = EXCLUDED.name,
   username = EXCLUDED.username,
@@ -239,7 +239,7 @@ ON CONFLICT (user_id) DO UPDATE SET
   mto = EXCLUDED.mto;
 
 INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, work_mode, officer, mto)
-VALUES ('PSS015', 'Talha Obaid', 'talha_obaid', 'talhaobaid@local.pss', '123123123', 'team_lead', 'defensive', ARRAY['defensive', 'ops']::text[], TRUE, '2026-09-27', FALSE, NULL, FALSE, FALSE)
+VALUES ('PSS015', 'Talha Obaid', 'talha_obaid', 'talhaobaid@local.pss', '123123123', 'team_lead', 'defensive', ARRAY['defensive', 'ops']::text[], TRUE, '2026-09-27', TRUE, NULL, FALSE, FALSE)
 ON CONFLICT (user_id) DO UPDATE SET
   name = EXCLUDED.name,
   username = EXCLUDED.username,

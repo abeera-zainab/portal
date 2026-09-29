@@ -54,7 +54,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
   const trend = periodDays(range).map((date) => {
     const day = todayKey(date);
     const beforeJoin = Boolean(person.joined && day < person.joined);
-    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, date);
+    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
     return {
       day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
       present: status === "on_time" || status === "late" ? 1 : 0,
@@ -146,7 +146,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
           </div>
         </article>
       </div>
-      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} />
+      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} />
     </>
   );
 }

@@ -37,7 +37,7 @@ function attendanceTotals(person: Person, attendance: Database["attendance"], le
     const record = byDate.get(day);
     if (record) {
       present += 1;
-      if (record.late || isLateCheckIn(new Date(record.checkIn))) late += 1;
+      if (isLateCheckIn(new Date(record.checkIn), Boolean(person.lateAllowed))) late += 1;
     } else if (isOnLeave(person.userId, leave, day)) {
       leaves += 1;
     } else {
@@ -78,7 +78,7 @@ export function AttendanceList() {
             {people.map((person) => {
               const teams = personTeams(person);
               const totals = attendanceTotals(person, db.attendance, db.leave);
-              const today = attendanceStatus(person.userId, db.attendance, db.leave);
+              const today = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
               return (
                 <tr key={person.userId}>
                   <td>

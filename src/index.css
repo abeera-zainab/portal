@@ -423,9 +423,28 @@ button.dash-hit.on { outline: 2px solid var(--green); }
   color: inherit;
   text-decoration: none;
 }
+.roster-head,
+.roster-person.roster-row {
+  display: grid;
+  grid-template-columns: minmax(140px, 1.5fr) 6.5rem 6.5rem minmax(7rem, 1fr);
+  align-items: center;
+  column-gap: 16px;
+}
+.roster-head {
+  margin: 0 0 6px;
+  padding: 0 12px;
+  color: var(--muted);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.roster-person.roster-row > span:nth-child(2),
+.roster-person.roster-row > span:nth-child(3) {
+  font-variant-numeric: tabular-nums;
+}
+.roster-head > span:last-child,
+.roster-person.roster-row > span:last-child { text-align: right; }
 .roster-person small { display: block; color: var(--muted); font-size: 12px; }
-.roster-times { color: #3d362f; font-size: 14px; text-align: right; }
-.roster-times small { font-size: 13px; }
 .recharts-legend-item { cursor: pointer; }
 .tone-green { color: var(--green); }
 .tone-amber { color: var(--amber); }

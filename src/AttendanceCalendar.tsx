@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AttendanceRecord, LeaveRequest } from "./types";
-import { isOnLeave, todayKey } from "./store";
+import { isLateCheckIn, isOnLeave, todayKey } from "./store";
 
 const FULL_DAY = 8 * 60;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -47,10 +47,12 @@ export function AttendanceCalendar({
   history,
   leave,
   userId,
+  lateAllowed = false,
 }: {
   history: AttendanceRecord[];
   leave: LeaveRequest[];
   userId: string;
+  lateAllowed?: boolean;
 }) {
   const [mode, setMode] = useState<"month" | "week">("month");
   const [cursor, setCursor] = useState(() => new Date());
@@ -116,7 +118,8 @@ export function AttendanceCalendar({
               ? Math.max(0, Math.round((Date.now() - new Date(record.checkIn).getTime()) / 60000))
               : undefined);
           const open = Boolean(record && !record.checkOut);
-          const tone = onLeave ? "leave" : !record ? "" : record.late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
+          const late = Boolean(record && isLateCheckIn(new Date(record.checkIn), lateAllowed));
+          const tone = onLeave ? "leave" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
           const width = minutes === undefined ? 0 : Math.min(100, Math.round((minutes / FULL_DAY) * 100));
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>

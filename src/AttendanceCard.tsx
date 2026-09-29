@@ -36,7 +36,7 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
     ? record.workedMinutes ?? minutesBetween(record.checkIn, record.checkOut ? new Date(record.checkOut) : now)
     : undefined;
   const onLeave = isOnLeave(person.userId, db.leave);
-  const status = attendanceStatus(person.userId, db.attendance, db.leave, now);
+  const status = attendanceStatus(person.userId, db.attendance, db.leave, now, Boolean(person.lateAllowed));
 
   return (
     <section className="card">
@@ -44,7 +44,9 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
       <p className="muted">
         {onLeave
           ? "You are on approved leave today."
-          : "9:30 AM is the last on-time check-in. Checking in after 9:30 AM is late."}
+          : person.lateAllowed
+            ? "11:00 AM is your last on-time check-in. Checking in after 11:00 AM is late."
+            : "9:30 AM is the last on-time check-in. Checking in after 9:30 AM is late."}
       </p>
       <div className="role-tags">
         {onLeave ? <span className="badge leave">Leave</span> : null}

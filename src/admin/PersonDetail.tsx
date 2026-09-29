@@ -21,7 +21,7 @@ import {
 export function assignedPlaceTags(person: Person) {
   if (person.role === "admin") return [];
   const tags: { id: string; label: string; className: string }[] = [];
-  if (person.lateAllowed) tags.push({ id: "late", label: "Late check-in", className: "badge late" });
+  if (person.lateAllowed) tags.push({ id: "late", label: "Until 11:00", className: "badge late" });
   if (person.workMode === "wfh") tags.push({ id: "wfh", label: "Work from home", className: "badge" });
   if (person.workMode === "remote") tags.push({ id: "remote", label: "Remote", className: "badge remote" });
   return tags;
@@ -31,7 +31,7 @@ export function AssignedTags({ person }: { person: Person }) {
   const db = useDatabase();
   const roles = roleTags(person).filter((tag) => tag.id === "officer" || tag.id === "team_lead" || tag.id === "mto");
   const places = assignedPlaceTags(person);
-  const status = person.role === "admin" ? null : attendanceStatus(person.userId, db.attendance, db.leave);
+  const status = person.role === "admin" ? null : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
   const onLeave = status === "leave";
   const lateToday = status === "late";
   if (!roles.length && !places.length && !onLeave && !lateToday) return null;
@@ -123,7 +123,7 @@ export function PersonAdjust({ person }: { person: Person }) {
             className={person.lateAllowed ? "domain on" : "domain"}
             onClick={() => void run(() => setLateAllowed(person.userId, !person.lateAllowed))}
           >
-            Late check-in
+            Late check-in until 11:00
           </button>
           <button
             type="button"

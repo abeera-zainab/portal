@@ -356,11 +356,11 @@ function TeamTools({ lead }: { lead: Person }) {
                     </td>
                     <td>{member.userId}</td>
                     <td>
-                      {attendanceStatus(member.userId, db.attendance, db.leave) === "late" ? (
+                      {attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed)) === "late" ? (
                         <span className="badge late">Late</span>
-                      ) : attendanceStatus(member.userId, db.attendance, db.leave) === "leave" ? (
+                      ) : attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed)) === "leave" ? (
                         <span className="badge leave">Leave</span>
-                      ) : attendanceStatus(member.userId, db.attendance, db.leave) === "on_time" ? (
+                      ) : attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed)) === "on_time" ? (
                         <span className="badge">On time</span>
                       ) : (
                         <span className="badge wait">Not in</span>

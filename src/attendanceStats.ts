@@ -23,7 +23,7 @@ export function attendanceTotals(person: Person, attendance: Database["attendanc
   let leaves = 0;
   let late = 0;
   for (const day of eachDay(start, today)) {
-    const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`));
+    const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), Boolean(person.lateAllowed));
     if (status === "leave") leaves += 1;
     else if (status === "late") {
       present += 1;

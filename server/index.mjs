@@ -245,8 +245,11 @@ app.post("/api/login", async (req, res) => {
 app.post("/api/attendance/check-in", async (req, res) => {
   const userId = String(req.body.userId || "");
   const now = new Date();
+  const person = await pool.query(`SELECT late_allowed FROM people WHERE user_id = $1`, [userId]);
+  const lateAllowed = Boolean(person.rows[0]?.late_allowed);
   const cutoff = new Date(now);
-  cutoff.setHours(9, 30, 0, 0);
+  if (lateAllowed) cutoff.setHours(11, 0, 0, 0);
+  else cutoff.setHours(9, 30, 0, 0);
   const late = now.getTime() > cutoff.getTime();
   const date = localDate(now);
   try {

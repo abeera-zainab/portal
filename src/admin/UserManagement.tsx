@@ -274,7 +274,7 @@ function UserRow({
   const db = useDatabase();
   const active = isPersonActive(person);
   const teams = personTeams(person);
-  const today = attendanceStatus(person.userId, db.attendance, db.leave);
+  const today = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
 
   return (
     <tr>

@@ -114,9 +114,10 @@ export const todayKey = (date = new Date()) => {
   return `${date.getFullYear()}-${month}-${day}`;
 };
 
-export const isLateCheckIn = (date: Date) => {
+export const isLateCheckIn = (date: Date, lateAllowed = false) => {
   const cutoff = new Date(date);
-  cutoff.setHours(9, 30, 0, 0);
+  if (lateAllowed) cutoff.setHours(11, 0, 0, 0);
+  else cutoff.setHours(9, 30, 0, 0);
   return date.getTime() > cutoff.getTime();
 };
 
@@ -129,12 +130,13 @@ export const attendanceStatus = (
   userId: string,
   attendance: Database["attendance"],
   leave: Database["leave"],
-  now = new Date()
+  now = new Date(),
+  lateAllowed = false
 ) => {
   const day = todayKey(now);
   if (isOnLeave(userId, leave, day)) return "leave" as const;
   const record = attendance.find((item) => item.userId === userId && item.date === day);
-  if (record && (record.late || isLateCheckIn(new Date(record.checkIn)))) return "late" as const;
+  if (record && isLateCheckIn(new Date(record.checkIn), lateAllowed)) return "late" as const;
   if (record) return "on_time" as const;
   return "not_in" as const;
 };
