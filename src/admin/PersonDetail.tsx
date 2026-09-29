@@ -4,6 +4,9 @@ import { Link, useParams } from "react-router-dom";
 import type { Person, WorkMode } from "../types";
 import {
   attendanceStatus,
+  hasLeadRights,
+  hasOfficerRank,
+  hasTeamLeadRank,
   isOfficer,
   isPersonActive,
   personTeams,
@@ -64,8 +67,11 @@ function sharesTeam(viewer: Person, person: Person) {
 export function canAdjustPerson(viewer: Person | null, person: Person) {
   if (!viewer) return false;
   if (viewer.role === "admin") return true;
-  if (viewer.role !== "team_lead" || person.role === "admin") return false;
-  return sharesTeam(viewer, person);
+  if (person.role === "admin" || !sharesTeam(viewer, person)) return false;
+  if (viewer.userId === person.userId) return hasLeadRights(viewer);
+  if (hasOfficerRank(viewer)) return !isOfficer(person);
+  if (hasTeamLeadRank(viewer)) return !isOfficer(person) && person.role !== "team_lead" && !person.mto;
+  return false;
 }
 
 export function PersonAdjust({ person }: { person: Person }) {

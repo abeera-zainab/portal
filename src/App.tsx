@@ -7,6 +7,7 @@ import { AttendanceCard } from "./AttendanceCard";
 import { AdminShell } from "./admin/AdminShell";
 import { AttendanceReport } from "./admin/AttendanceReport";
 import { LeaveInbox, TeamLeaveBoard } from "./LeaveReview";
+import { EmployeeDashboard } from "./EmployeeDashboard";
 import { TeamDashboard } from "./TeamDashboard";
 import { UserDetail } from "./admin/PersonDetail";
 import {
@@ -22,6 +23,9 @@ import {
   TEAMS,
   assignTeam,
   attendanceStatus,
+  hasLeadRights,
+  hasOfficerRank,
+  hasTeamLeadRank,
   login,
   logout,
   personTeams,
@@ -77,7 +81,7 @@ function StaffShell({ person }: { person: Person }) {
           <SideLink to="/" end icon={<DashboardIcon />}>
             Dashboard
           </SideLink>
-          {person.role === "team_lead" ? (
+          {hasLeadRights(person) ? (
             <SideLink to="/my-attendance" icon={<ReportIcon />}>
               My attendance
             </SideLink>
@@ -85,7 +89,7 @@ function StaffShell({ person }: { person: Person }) {
           <SideLink to="/leave" end icon={<LeaveIcon />}>
             Leave
           </SideLink>
-          {person.role === "team_lead" ? (
+          {hasLeadRights(person) ? (
             <SideLink to="/team" end icon={<TeamIcon />}>
               Team
             </SideLink>
@@ -115,18 +119,18 @@ function StaffShell({ person }: { person: Person }) {
         </header>
         <div className="admin-page">
           <Routes>
-            <Route path="/" element={person.role === "team_lead" ? <TeamHome person={person} /> : <AttendanceCard person={person} />} />
+            <Route path="/" element={hasLeadRights(person) ? <TeamHome person={person} /> : <EmployeeHome person={person} />} />
             <Route
               path="/my-attendance"
-              element={person.role === "team_lead" ? <AttendanceReport mine /> : <Navigate to="/" replace />}
+              element={hasLeadRights(person) ? <AttendanceReport mine /> : <Navigate to="/" replace />}
             />
             <Route
               path="/leave"
-              element={person.role === "team_lead" ? <TeamLeave person={person} /> : <LeaveCard person={person} />}
+              element={hasLeadRights(person) ? <TeamLeave person={person} /> : <LeaveCard person={person} />}
             />
             <Route
               path="/team"
-              element={person.role === "team_lead" ? <TeamTools lead={person} /> : <Navigate to="/" replace />}
+              element={hasLeadRights(person) ? <TeamTools lead={person} /> : <Navigate to="/" replace />}
             />
             <Route path="/account" element={<AccountSettings person={person} />} />
             <Route path="/users/:userId" element={<UserDetail backTo="/team" backLabel="← Back to team" />} />
@@ -185,6 +189,28 @@ function Login() {
   );
 }
 
+function EmployeeHome({ person }: { person: Person }) {
+  const [marking, setMarking] = useState(false);
+  return (
+    <div className="manage">
+      <div className="manage-head">
+        <div>
+          <h1>Dashboard</h1>
+        </div>
+        <div className="filters">
+          <button type="button" className={marking ? "chip" : "chip on"} onClick={() => setMarking(false)}>
+            Your attendance
+          </button>
+          <button type="button" className={marking ? "chip on" : "chip"} onClick={() => setMarking(true)}>
+            Mark your attendance
+          </button>
+        </div>
+      </div>
+      {marking ? <AttendanceCard person={person} heading="Mark your attendance" /> : <EmployeeDashboard person={person} />}
+    </div>
+  );
+}
+
 function TeamHome({ person }: { person: Person }) {
   const [marking, setMarking] = useState(false);
   return (
@@ -237,9 +263,11 @@ function LeaveCard({ person, heading = "Leave" }: { person: Person; heading?: st
     <section className="card">
       <h2>{heading}</h2>
       <p className="muted">
-        {person.role === "team_lead"
-          ? "Team lead leave is sent to an admin."
-          : "Your team lead or an admin can approve or reject this."}
+        {hasOfficerRank(person)
+          ? "Your leave is sent to an admin."
+          : hasTeamLeadRank(person)
+            ? "Your leave is sent to an officer or an admin."
+            : "An officer, team lead, or an admin can approve or reject this."}
       </p>
       <form onSubmit={submit} className="row" style={{ marginTop: 14 }}>
         <label>

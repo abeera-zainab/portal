@@ -193,11 +193,33 @@ async function actor(req) {
   const userId = req.header("x-user-id");
   if (!userId) return null;
   const result = await pool.query(
-    `SELECT user_id, role, team, teams FROM people WHERE user_id = $1 AND active = TRUE`,
+    `SELECT user_id, role, team, teams, officer, mto FROM people WHERE user_id = $1 AND active = TRUE`,
     [userId]
   );
   return result.rows[0] ?? null;
 }
+
+const isOfficerRow = (row) => Boolean(row) && (row.role === "officer" || row.officer);
+
+const hasOfficerRank = (row) => Boolean(row) && row.role !== "admin" && isOfficerRow(row);
+
+const hasTeamLeadRank = (row) =>
+  Boolean(row) && row.role !== "admin" && !isOfficerRow(row) && (row.role === "team_lead" || row.mto);
+
+const hasLeadRights = (row) => hasOfficerRank(row) || hasTeamLeadRank(row);
+
+const sharesTeamRow = (left, right) => {
+  const leftTeams = left?.teams?.length ? left.teams : left?.team ? [left.team] : [];
+  const rightTeams = right?.teams?.length ? right.teams : right?.team ? [right.team] : [];
+  return rightTeams.some((team) => leftTeams.includes(team));
+};
+
+const canReviewMember = (who, member) => {
+  if (!member || member.role === "admin" || who.user_id === member.user_id || !sharesTeamRow(who, member)) return false;
+  if (hasOfficerRank(who)) return !isOfficerRow(member);
+  if (hasTeamLeadRank(who)) return !isOfficerRow(member) && member.role !== "team_lead" && !member.mto;
+  return false;
+};
 
 const app = express();
 app.use(express.json());
@@ -387,8 +409,8 @@ const accountFields = (person, body) => {
 
 app.patch("/api/people/:userId", async (req, res) => {
   const who = await actor(req);
-  if (!who || (who.role !== "admin" && who.role !== "team_lead")) {
-    res.status(403).json({ error: "Only an admin or team lead can edit accounts." });
+  if (!who || (who.role !== "admin" && !hasLeadRights(who))) {
+    res.status(403).json({ error: "Only an admin, officer, team lead, or MTO can edit accounts." });
     return;
   }
   const userId = req.params.userId;
@@ -398,15 +420,23 @@ app.patch("/api/people/:userId", async (req, res) => {
     return;
   }
   const person = current.rows[0];
-  if (who.role === "team_lead") {
+  if (who.role !== "admin") {
     if (person.role === "admin") {
-      res.status(403).json({ error: "A team lead cannot edit an admin." });
+      res.status(403).json({ error: "You cannot edit an admin." });
       return;
     }
     const leadTeams = who.teams?.length ? who.teams : who.team ? [who.team] : [];
     const memberTeams = person.teams?.length ? person.teams : person.team ? [person.team] : [];
     if (!memberTeams.some((team) => leadTeams.includes(team))) {
       res.status(403).json({ error: "You can only update people on your team." });
+      return;
+    }
+    if (who.user_id !== userId && hasOfficerRank(who) && isOfficerRow(person)) {
+      res.status(403).json({ error: "An admin updates other officers." });
+      return;
+    }
+    if (who.user_id !== userId && hasTeamLeadRank(who) && (isOfficerRow(person) || person.role === "team_lead" || person.mto)) {
+      res.status(403).json({ error: "An officer or admin updates officers, team leads, and MTOs." });
       return;
     }
     const active = req.body.active === undefined ? person.active : Boolean(req.body.active);
@@ -588,8 +618,8 @@ app.patch("/api/account", async (req, res) => {
 
 app.post("/api/leave/:id/review", async (req, res) => {
   const who = await actor(req);
-  if (!who || (who.role !== "admin" && who.role !== "team_lead")) {
-    res.status(403).json({ error: "Only an admin or team lead can review leave." });
+  if (!who || (who.role !== "admin" && !hasLeadRights(who))) {
+    res.status(403).json({ error: "Only an admin, officer, team lead, or MTO can review leave." });
     return;
   }
   const decision = req.body.decision;
@@ -608,17 +638,11 @@ app.post("/api/leave/:id/review", async (req, res) => {
     res.status(400).json({ error: "You cannot review your own request." });
     return;
   }
-  if (who.role === "team_lead") {
-    const owner = await pool.query(`SELECT role, team, teams FROM people WHERE user_id = $1`, [request.user_id]);
+  if (who.role !== "admin") {
+    const owner = await pool.query(`SELECT role, team, teams, officer, mto FROM people WHERE user_id = $1`, [request.user_id]);
     const member = owner.rows[0];
-    if (member?.role === "team_lead" || member?.role === "admin") {
-      res.status(403).json({ error: "An admin reviews leave for team leads." });
-      return;
-    }
-    const leadTeams = who.teams?.length ? who.teams : who.team ? [who.team] : [];
-    const memberTeams = member?.teams?.length ? member.teams : member?.team ? [member.team] : [];
-    if (!memberTeams.some((team) => leadTeams.includes(team))) {
-      res.status(403).json({ error: "You can only review leave for your team." });
+    if (!canReviewMember(who, member)) {
+      res.status(403).json({ error: "You can only review leave for people below your role on your team." });
       return;
     }
   }

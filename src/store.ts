@@ -79,6 +79,21 @@ export const teamName = (team: TeamId | null) =>
 
 export const isOfficer = (person: Person) => person.role === "officer" || Boolean(person.officer);
 
+export const hasOfficerRank = (person: Person) => person.role !== "admin" && isOfficer(person);
+
+export const hasTeamLeadRank = (person: Person) =>
+  person.role !== "admin" && !isOfficer(person) && (person.role === "team_lead" || Boolean(person.mto));
+
+export const hasLeadRights = (person: Person) => hasOfficerRank(person) || hasTeamLeadRank(person);
+
+export const canReviewLeave = (reviewer: Person, owner: Person) => {
+  if (owner.role === "admin" || reviewer.userId === owner.userId || !sharesTeam(reviewer, owner)) return false;
+  if (reviewer.role === "admin") return true;
+  if (hasOfficerRank(reviewer)) return !isOfficer(owner);
+  if (hasTeamLeadRank(reviewer)) return !isOfficer(owner) && owner.role !== "team_lead" && !owner.mto;
+  return false;
+};
+
 export const roleTags = (person: Person): { id: string; label: string }[] => {
   if (person.role === "admin") return [{ id: "admin", label: "Admin" }];
   const tags: { id: string; label: string }[] = [];
@@ -101,9 +116,8 @@ export const teamRoster = (lead: Person, people: Person[]) =>
 export const reviewableLeave = (lead: Person, people: Person[], leave: LeaveRequest[]) =>
   leave.filter((request) => {
     const owner = people.find((person) => person.userId === request.userId);
-    if (!owner || owner.userId === lead.userId) return false;
-    if (owner.role === "team_lead" || owner.role === "admin") return false;
-    return sharesTeam(lead, owner);
+    if (!owner) return false;
+    return canReviewLeave(lead, owner);
   });
 
 export const isPersonActive = (person: Person) => person.active !== false;

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
 import type { Person } from "./types";
-import { personTeams, useDatabase } from "./store";
+import { canReviewLeave, hasLeadRights, hasOfficerRank, hasTeamLeadRank, isOfficer, useDatabase } from "./store";
 
 export function SideLink({
   to,
@@ -102,7 +102,12 @@ function leaveAlerts(
     if (request.status === "pending") {
       items.push({
         id: request.id,
-        title: person.role === "team_lead" || person.role === "admin" ? "Your leave is with an admin" : "Your leave request is pending",
+        title:
+          person.role === "admin" || hasOfficerRank(person)
+            ? "Your leave is with an admin"
+            : hasTeamLeadRank(person)
+              ? "Your leave is with an officer or an admin"
+              : "Your leave request is pending",
         detail: dates,
         href: "/leave",
       });
@@ -128,23 +133,31 @@ function leaveAlerts(
     for (const request of pending) {
       const owner = people.find((item) => item.userId === request.userId);
       const name = owner?.name ?? request.userId;
+      const standing = !owner
+        ? ""
+        : isOfficer(owner)
+          ? " (officer)"
+          : owner.role === "team_lead"
+            ? " (team lead)"
+            : owner.mto
+              ? " (MTO)"
+              : "";
       items.push({
         id: request.id,
-        title: owner?.role === "team_lead" ? `${name} (team lead) requested leave` : `${name} requested leave`,
+        title: `${name}${standing} requested leave`,
         detail: range(request.from, request.to),
         href: "/leave",
       });
     }
-  } else if (person.role === "team_lead") {
+  } else if (hasLeadRights(person)) {
     for (const request of pending) {
       const owner = people.find((item) => item.userId === request.userId);
-      if (!owner || owner.role === "team_lead" || owner.role === "admin") continue;
-      if (!personTeams(person).some((team) => personTeams(owner).includes(team))) continue;
+      if (!owner || !canReviewLeave(person, owner)) continue;
       items.push({
         id: request.id,
         title: `${owner.name} requested leave`,
         detail: range(request.from, request.to),
-        href: "/team",
+        href: "/leave",
       });
     }
   }
