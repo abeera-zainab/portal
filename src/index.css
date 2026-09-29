@@ -424,6 +424,8 @@ button.dash-hit.on { outline: 2px solid var(--green); }
   text-decoration: none;
 }
 .roster-person small { display: block; color: var(--muted); font-size: 12px; }
+.roster-times { color: #3d362f; font-size: 14px; text-align: right; }
+.roster-times small { font-size: 13px; }
 .recharts-legend-item { cursor: pointer; }
 .tone-green { color: var(--green); }
 .tone-amber { color: var(--amber); }

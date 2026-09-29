@@ -5,6 +5,7 @@ import type { Person, TeamId } from "./types";
 import {
   attendanceStatus,
   isOnLeave,
+  formatClock,
   personTeams,
   reviewableLeave,
   teamName,
@@ -310,6 +311,9 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                 <ul>
                   {people.map((person) => {
                     const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when);
+                    const record = db.attendance.find(
+                      (item) => item.userId === person.userId && item.date === todayKey(focus.when)
+                    );
                     const note =
                       focus.kind === "pending"
                         ? "Pending"
@@ -326,6 +330,10 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                           <span>
                             {person.name}
                             <small>{person.userId}</small>
+                          </span>
+                          <span className="roster-times">
+                            In {formatClock(record?.checkIn)}
+                            <small>Out {formatClock(record?.checkOut)}</small>
                           </span>
                           <span>{note}</span>
                         </Link>

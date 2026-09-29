@@ -22,6 +22,7 @@ import {
   attendanceStatus,
   isOnLeave,
   isPersonActive,
+  formatClock,
   personTeams,
   teamName,
   todayKey,
@@ -380,6 +381,9 @@ export function Dashboard() {
                 <ul>
                   {people.map((person) => {
                     const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when);
+                    const record = db.attendance.find(
+                      (item) => item.userId === person.userId && item.date === todayKey(focus.when)
+                    );
                     const note =
                       focus.kind === "leave" || status === "leave"
                         ? leaveSpan(person)
@@ -396,6 +400,10 @@ export function Dashboard() {
                           <span>
                             {person.name}
                             <small>{person.userId}</small>
+                          </span>
+                          <span className="roster-times">
+                            In {formatClock(record?.checkIn)}
+                            <small>Out {formatClock(record?.checkOut)}</small>
                           </span>
                           <span>{note}</span>
                         </Link>
