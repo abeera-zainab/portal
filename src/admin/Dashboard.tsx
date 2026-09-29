@@ -16,6 +16,7 @@ import {
   YAxis,
 } from "recharts";
 import type { Person, TeamId } from "../types";
+import { AttendanceCard } from "../AttendanceCard";
 import {
   TEAMS,
   attendanceStatus,
@@ -25,6 +26,7 @@ import {
   teamName,
   todayKey,
   useDatabase,
+  useSession,
 } from "../store";
 
 const GREEN = "#1f6b4a";
@@ -80,8 +82,10 @@ const kindFromLabel = (label: string): Kind => {
 
 export function Dashboard() {
   const db = useDatabase();
+  const session = useSession();
   const [range, setRange] = useState<"week" | "month">("week");
   const [focus, setFocus] = useState<Focus | null>(null);
+  const [marking, setMarking] = useState(false);
 
   const staff = useMemo(
     () => db.people.filter((person) => person.role !== "admin" && isPersonActive(person)),
@@ -220,10 +224,19 @@ export function Dashboard() {
       <div className="manage-head">
         <div>
           <h1>Dashboard</h1>
-          <p className="muted">{todayLabel}. Click a count or a chart to see who it includes.</p>
+          {marking ? null : <p className="muted">{todayLabel}. Click a count or a chart to see who it includes.</p>}
+        </div>
+        <div className="filters">
+          <button type="button" className={marking ? "chip" : "chip on"} onClick={() => setMarking(false)}>
+            Overview
+          </button>
+          <button type="button" className={marking ? "chip on" : "chip"} onClick={() => setMarking(true)}>
+            Mark your attendance
+          </button>
         </div>
       </div>
 
+      {marking && session ? <AttendanceCard person={session} heading="Mark your attendance" /> : <>
       <div className="dash-stats">
         <button
           type="button"
@@ -395,6 +408,7 @@ export function Dashboard() {
           )}
         </article>
       ) : null}
+      </>}
     </section>
   );
 }

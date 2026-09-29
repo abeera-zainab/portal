@@ -34,6 +34,9 @@ export function AdminShell() {
           <SideLink to="/dashboard" end icon={<DashboardIcon />}>
             Dashboard
           </SideLink>
+          <SideLink to="/my-attendance" icon={<ReportIcon />}>
+            My attendance
+          </SideLink>
           <SideLink to="/users" icon={<PeopleIcon />}>
             User management
           </SideLink>
@@ -67,6 +70,7 @@ export function AdminShell() {
         <div className="admin-page">
           <Routes>
             <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/my-attendance" element={<AttendanceReport mine />} />
             <Route path="/users/:userId" element={<UserDetail backTo="/users" backLabel="← Back to users" />} />
             <Route path="/users" element={<UserManagement />} />
             <Route path="/attendance" element={<AttendanceList />} />

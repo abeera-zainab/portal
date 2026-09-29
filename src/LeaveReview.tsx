@@ -1,6 +1,261 @@
-import { useState } from "react";
-import type { LeaveRequest } from "./types";
-import { reviewLeave, useDatabase, useSession } from "./store";
+import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
+import { CartesianGrid, Cell, Legend, Line, LineChart, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import type { LeaveRequest, Person } from "./types";
+import { isOnLeave, personTeams, reviewableLeave, reviewLeave, teamName, teamRoster, todayKey, useDatabase, useSession } from "./store";
+
+const GREEN = "#1f6b4a";
+const AMBER = "#9a5b12";
+const RED = "#9f1239";
+const LEAVE = "#1d4e89";
+
+const tooltipStyle = {
+  background: "#fffdf8",
+  border: "1px solid #e4d9c8",
+  borderRadius: 12,
+  fontSize: 13,
+};
+
+const noon = (date: Date) => {
+  const copy = new Date(date);
+  copy.setHours(12, 0, 0, 0);
+  return copy;
+};
+
+const periodDays = (mode: "week" | "month") => {
+  const today = noon(new Date());
+  const start = new Date(today);
+  if (mode === "week") {
+    const weekday = start.getDay();
+    start.setDate(start.getDate() - (weekday === 0 ? 6 : weekday - 1));
+  } else {
+    start.setDate(1);
+  }
+  const days: Date[] = [];
+  for (const cursor = new Date(start); cursor <= today; cursor.setDate(cursor.getDate() + 1)) {
+    days.push(noon(cursor));
+  }
+  return days;
+};
+
+type LeaveFocus =
+  | { kind: "pending" | "approved" | "rejected"; title: string }
+  | { kind: "day"; title: string; day: string };
+
+export function TeamLeaveBoard({ lead }: { lead: Person }) {
+  const db = useDatabase();
+  const [range, setRange] = useState<"week" | "month">("week");
+  const [focus, setFocus] = useState<LeaveFocus | null>(null);
+  const requests = reviewableLeave(lead, db.people, db.leave);
+  const members = useMemo(() => teamRoster(lead, db.people), [db.people, lead]);
+  const pending = requests.filter((request) => request.status === "pending");
+  const accepted = requests.filter((request) => request.status === "approved");
+  const rejected = requests.filter((request) => request.status === "rejected");
+  const leadTeams = personTeams(lead);
+
+  const open = (next: LeaveFocus) => {
+    setFocus((current) => (current && current.title === next.title && current.kind === next.kind ? null : next));
+  };
+
+  const mix = [
+    { name: "Pending", value: pending.length, color: AMBER },
+    { name: "Accepted", value: accepted.length, color: GREEN },
+    { name: "Rejected", value: rejected.length, color: RED },
+  ];
+
+  const trend = periodDays(range).map((date) => {
+    const day = todayKey(date);
+    return {
+      day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      when: day,
+      onLeave: members.filter((person) => isOnLeave(person.userId, db.leave, day)).length,
+    };
+  });
+
+  const listed =
+    focus?.kind === "pending" ? pending : focus?.kind === "approved" ? accepted : focus?.kind === "rejected" ? rejected : [];
+
+  const dayPeople =
+    focus?.kind === "day" ? members.filter((person) => isOnLeave(person.userId, db.leave, focus.day)) : [];
+
+  return (
+    <>
+      <p className="muted">Review leave from your team. Click a count or the chart to see who it includes.</p>
+      <div className="dash-stats">
+        <button
+          type="button"
+          className={focus?.kind === "pending" ? "card stat dash-hit on" : "card stat dash-hit"}
+          onClick={() => open({ kind: "pending", title: "Pending leave" })}
+        >
+          <span>Pending</span>
+          <strong className="tone-amber">{pending.length}</strong>
+        </button>
+        <button
+          type="button"
+          className={focus?.kind === "approved" ? "card stat dash-hit on" : "card stat dash-hit"}
+          onClick={() => open({ kind: "approved", title: "Accepted leave" })}
+        >
+          <span>Accepted</span>
+          <strong className="tone-green">{accepted.length}</strong>
+        </button>
+        <button
+          type="button"
+          className={focus?.kind === "rejected" ? "card stat dash-hit on" : "card stat dash-hit"}
+          onClick={() => open({ kind: "rejected", title: "Rejected leave" })}
+        >
+          <span>Rejected</span>
+          <strong>{rejected.length}</strong>
+        </button>
+        <article className="card stat">
+          <span>Total leaves</span>
+          <strong>{requests.length}</strong>
+        </article>
+      </div>
+
+      <div className="dash-charts">
+        <article className="card">
+          <h2>Requests</h2>
+          <p className="muted">Pending, accepted, and rejected leave on your team.</p>
+          <div className="chart-box">
+            {requests.length === 0 ? (
+              <p className="muted chart-empty">No leave requests yet.</p>
+            ) : (
+              <ResponsiveContainer width="100%" height="100%">
+                <PieChart>
+                  <Pie
+                    data={mix}
+                    dataKey="value"
+                    nameKey="name"
+                    innerRadius={62}
+                    outerRadius={92}
+                    paddingAngle={3}
+                    onClick={(slice) => {
+                      const name = String(slice.name);
+                      const kind = name === "Pending" ? "pending" : name === "Accepted" ? "approved" : "rejected";
+                      open({ kind, title: `${name} leave` });
+                    }}
+                  >
+                    {mix.map((slice) => (
+                      <Cell key={slice.name} fill={slice.color} cursor="pointer" />
+                    ))}
+                  </Pie>
+                  <Tooltip contentStyle={tooltipStyle} />
+                  <Legend
+                    onClick={(item) => {
+                      const name = String(item.value);
+                      const kind = name === "Pending" ? "pending" : name === "Accepted" ? "approved" : "rejected";
+                      open({ kind, title: `${name} leave` });
+                    }}
+                  />
+                </PieChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </article>
+
+        <article className="card">
+          <div className="calendar-head">
+            <div>
+              <h2>{range === "week" ? "This week" : "This month"}</h2>
+              <p className="muted">People on approved leave. Click a point to see who.</p>
+            </div>
+            <div className="filters">
+              <button type="button" className={range === "week" ? "chip on" : "chip"} onClick={() => setRange("week")}>
+                Week
+              </button>
+              <button type="button" className={range === "month" ? "chip on" : "chip"} onClick={() => setRange("month")}>
+                Month
+              </button>
+            </div>
+          </div>
+          <div className="chart-box">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart
+                data={trend}
+                onClick={(state) => {
+                  const point = trend.find((item) => item.day === state.activeLabel);
+                  if (!point) return;
+                  open({ kind: "day", day: point.when, title: `On leave · ${point.day}` });
+                }}
+              >
+                <CartesianGrid stroke="#e4d9c8" vertical={false} />
+                <XAxis dataKey="day" tick={{ fill: "#6d645b", fontSize: 12 }} />
+                <YAxis allowDecimals={false} tick={{ fill: "#6d645b", fontSize: 12 }} width={32} />
+                <Tooltip contentStyle={tooltipStyle} />
+                <Legend />
+                <Line type="monotone" dataKey="onLeave" name="On leave" stroke={LEAVE} strokeWidth={2} dot={{ r: 3 }} activeDot={{ r: 5 }} />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        </article>
+      </div>
+
+      {focus ? (
+        <article className="card roster">
+          <h2>{focus.title}</h2>
+          <p className="muted">
+            {(focus.kind === "day" ? dayPeople.length : listed.length)}{" "}
+            {focus.kind === "day"
+              ? dayPeople.length === 1
+                ? "person"
+                : "people"
+              : listed.length === 1
+                ? "request"
+                : "requests"}
+            .
+          </p>
+          {focus.kind === "day" ? (
+            dayPeople.length === 0 ? (
+              <p className="muted">No one was on leave.</p>
+            ) : (
+              <div className="roster-team">
+                <ul>
+                  {dayPeople.map((person) => (
+                    <li key={person.userId}>
+                      <Link className="roster-person" to={`/users/${person.userId}`}>
+                        <span>
+                          {person.name}
+                          <small>{person.userId}</small>
+                        </span>
+                        <span>{personTeams(person).filter((team) => leadTeams.includes(team)).map((team) => teamName(team)).join(", ")}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )
+          ) : listed.length === 0 ? (
+            <p className="muted">No leave requests match this view.</p>
+          ) : (
+            <div className="roster-team">
+              <ul>
+                {listed.map((request) => {
+                  const owner = db.people.find((person) => person.userId === request.userId);
+                  return (
+                    <li key={request.id}>
+                      <Link className="roster-person" to={`/users/${request.userId}`}>
+                        <span>
+                          {owner?.name ?? request.userId}
+                          <small>
+                            {request.from}
+                            {request.to !== request.from ? ` to ${request.to}` : ""}
+                          </small>
+                        </span>
+                        <span>{request.reason}</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </div>
+          )}
+        </article>
+      ) : null}
+
+      <LeaveInbox requests={requests} reviewerId={lead.userId} title="Team leave" />
+    </>
+  );
+}
 
 export function LeaveInbox({
   requests,
