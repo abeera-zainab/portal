@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Database, Person, Role, TeamId, WorkMode } from "./types";
+import type { Database, LeaveRequest, Person, Role, TeamId, WorkMode } from "./types";
 
 export const TEAMS: { id: TeamId; name: string }[] = [
   { id: "offensive", name: "Offensive" },
@@ -91,6 +91,20 @@ export const roleTags = (person: Person): { id: string; label: string }[] => {
 
 export const personTeams = (person: Person): TeamId[] =>
   person.teams?.length ? person.teams : person.team ? [person.team] : [];
+
+export const sharesTeam = (left: Person, right: Person) =>
+  personTeams(left).some((team) => personTeams(right).includes(team));
+
+export const teamRoster = (lead: Person, people: Person[]) =>
+  people.filter((person) => person.role !== "admin" && isPersonActive(person) && sharesTeam(lead, person));
+
+export const reviewableLeave = (lead: Person, people: Person[], leave: LeaveRequest[]) =>
+  leave.filter((request) => {
+    const owner = people.find((person) => person.userId === request.userId);
+    if (!owner || owner.userId === lead.userId) return false;
+    if (owner.role === "team_lead" || owner.role === "admin") return false;
+    return sharesTeam(lead, owner);
+  });
 
 export const isPersonActive = (person: Person) => person.active !== false;
 

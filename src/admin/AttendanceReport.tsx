@@ -140,9 +140,10 @@ function AttendanceCalendar({
   );
 }
 
-export function AttendanceReport() {
-  const { userId = "" } = useParams();
+export function AttendanceReport({ mine = false }: { mine?: boolean }) {
+  const { userId: routeUserId = "" } = useParams();
   const session = useSession();
+  const userId = mine ? session?.userId ?? "" : routeUserId;
   const db = useDatabase();
   const person = db.people.find((item) => item.userId === userId);
   const history = historyFor(userId);
@@ -162,25 +163,30 @@ export function AttendanceReport() {
 
   return (
     <section className="manage">
-      <Link className="back-link" to={session?.role === "admin" ? "/attendance" : `/users/${person.userId}`}>
-        {session?.role === "admin" ? "← Back to attendance" : "← Back to user"}
-      </Link>
+      {mine ? null : (
+        <Link className="back-link" to={session?.role === "admin" ? "/attendance" : `/users/${person.userId}`}>
+          {session?.role === "admin" ? "← Back to attendance" : "← Back to user"}
+        </Link>
+      )}
       <div className="manage-head">
         <div>
-          <h1>{person.name}</h1>
-          <AssignedTags person={person} />
+          <h1>{mine ? "My attendance" : person.name}</h1>
+          {mine ? null : <AssignedTags person={person} />}
           <p className="muted">
+            {mine ? `${person.name} · ` : ""}
             {person.userId} · @{person.username} · {person.email}
             {personTeams(person).length
               ? ` · ${personTeams(person).map((team) => teamName(team)).join(", ")}`
               : ""}
           </p>
         </div>
-        <Link className="btn secondary" to={`/users/${person.userId}`}>
-          User detail
-        </Link>
+        {mine ? null : (
+          <Link className="btn secondary" to={`/users/${person.userId}`}>
+            User detail
+          </Link>
+        )}
       </div>
-      <PersonAdjust person={person} />
+      {mine ? null : <PersonAdjust person={person} />}
       <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} />
       <div className="stat-row">
         <div className="card stat">

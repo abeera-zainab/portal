@@ -6,11 +6,13 @@ import { AccountSettings } from "./AccountSettings";
 import { AdminShell } from "./admin/AdminShell";
 import { AttendanceReport } from "./admin/AttendanceReport";
 import { LeaveInbox } from "./LeaveReview";
+import { TeamDashboard } from "./TeamDashboard";
 import { UserDetail } from "./admin/PersonDetail";
 import {
   AccountSettingsButton,
   DashboardIcon,
   LeaveIcon,
+  ReportIcon,
   LeaveNotifications,
   SideLink,
   TeamIcon,
@@ -29,7 +31,9 @@ import {
   minutesBetween,
   personTeams,
   requestLeave,
+  reviewableLeave,
   teamName,
+  teamRoster,
   todayKey,
   useDatabase,
   useDbError,
@@ -78,6 +82,11 @@ function StaffShell({ person }: { person: Person }) {
           <SideLink to="/" end icon={<DashboardIcon />}>
             Dashboard
           </SideLink>
+          {person.role === "team_lead" ? (
+            <SideLink to="/my-attendance" icon={<ReportIcon />}>
+              My attendance
+            </SideLink>
+          ) : null}
           <SideLink to="/leave" end icon={<LeaveIcon />}>
             Leave
           </SideLink>
@@ -92,7 +101,7 @@ function StaffShell({ person }: { person: Person }) {
         <header className="topbar">
           <div className="brand">
             <strong>PSS Attendance</strong>
-            <span>{person.team ? teamName(person.team) : roleLabel(person)}</span>
+            <span>{personTeams(person).length ? personTeams(person).map((team) => teamName(team)).join(", ") : roleLabel(person)}</span>
           </div>
           <div className="who">
             <div>
@@ -111,8 +120,15 @@ function StaffShell({ person }: { person: Person }) {
         </header>
         <div className="admin-page">
           <Routes>
-            <Route path="/" element={<AttendanceCard person={person} />} />
-            <Route path="/leave" element={<LeaveCard person={person} />} />
+            <Route path="/" element={person.role === "team_lead" ? <TeamHome person={person} /> : <AttendanceCard person={person} />} />
+            <Route
+              path="/my-attendance"
+              element={person.role === "team_lead" ? <AttendanceReport mine /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/leave"
+              element={person.role === "team_lead" ? <TeamLeave person={person} /> : <LeaveCard person={person} />}
+            />
             <Route
               path="/team"
               element={person.role === "team_lead" ? <TeamTools lead={person} /> : <Navigate to="/" replace />}
@@ -174,7 +190,29 @@ function Login() {
   );
 }
 
-function AttendanceCard({ person }: { person: Person }) {
+function TeamHome({ person }: { person: Person }) {
+  const [marking, setMarking] = useState(false);
+  return (
+    <div className="manage">
+      <div className="manage-head">
+        <div>
+          <h1>Dashboard</h1>
+        </div>
+        <div className="filters">
+          <button type="button" className={marking ? "chip" : "chip on"} onClick={() => setMarking(false)}>
+            Team
+          </button>
+          <button type="button" className={marking ? "chip on" : "chip"} onClick={() => setMarking(true)}>
+            Mark your attendance
+          </button>
+        </div>
+      </div>
+      {marking ? <AttendanceCard person={person} heading="Mark your attendance" /> : <TeamDashboard lead={person} />}
+    </div>
+  );
+}
+
+function AttendanceCard({ person, heading = "Today" }: { person: Person; heading?: string }) {
   const db = useDatabase();
   const [now, setNow] = useState(() => new Date());
   const [error, setError] = useState("");
@@ -202,7 +240,7 @@ function AttendanceCard({ person }: { person: Person }) {
 
   return (
     <section className="card">
-      <h2>Today</h2>
+      <h2>{heading}</h2>
       <p className="muted">
         {onLeave
           ? "You are on approved leave today."
@@ -243,7 +281,7 @@ function AttendanceCard({ person }: { person: Person }) {
   );
 }
 
-function LeaveCard({ person }: { person: Person }) {
+function LeaveCard({ person, heading = "Leave" }: { person: Person; heading?: string }) {
   const db = useDatabase();
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -271,7 +309,7 @@ function LeaveCard({ person }: { person: Person }) {
 
   return (
     <section className="card">
-      <h2>Leave</h2>
+      <h2>{heading}</h2>
       <p className="muted">
         {person.role === "team_lead"
           ? "Team lead leave is sent to an admin."
@@ -330,17 +368,46 @@ function LeaveCard({ person }: { person: Person }) {
   );
 }
 
+function TeamLeave({ person }: { person: Person }) {
+  const db = useDatabase();
+  const requests = reviewableLeave(person, db.people, db.leave);
+  const accepted = requests.filter((request) => request.status === "approved").length;
+  const rejected = requests.filter((request) => request.status === "rejected").length;
+
+  return (
+    <div className="manage">
+      <div className="manage-head">
+        <div>
+          <h1>Leave</h1>
+          <p className="muted">Review leave from your team. Your own leave goes to an admin.</p>
+        </div>
+      </div>
+      <div className="dash-stats">
+        <article className="card stat">
+          <span>Total leaves</span>
+          <strong>{requests.length}</strong>
+        </article>
+        <article className="card stat">
+          <span>Accepted</span>
+          <strong className="tone-green">{accepted}</strong>
+        </article>
+        <article className="card stat">
+          <span>Rejected</span>
+          <strong className="tone-amber">{rejected}</strong>
+        </article>
+      </div>
+      <LeaveInbox requests={requests} reviewerId={person.userId} title="Team leave" />
+      <LeaveCard person={person} heading="Your leave" />
+    </div>
+  );
+}
+
 function TeamTools({ lead }: { lead: Person }) {
   const db = useDatabase();
   const [choices, setChoices] = useState<Record<string, TeamId>>({});
   const [error, setError] = useState("");
-  const members = db.people.filter((person) => person.team === lead.team && person.userId !== lead.userId);
-  const requests = db.leave.filter((request) => {
-    const owner = db.people.find((person) => person.userId === request.userId);
-    if (!owner || owner.userId === lead.userId) return false;
-    if (owner.role === "team_lead" || owner.role === "admin") return false;
-    return personTeams(lead).some((team) => personTeams(owner).includes(team));
-  });
+  const members = teamRoster(lead, db.people).filter((person) => person.userId !== lead.userId);
+  const requests = reviewableLeave(lead, db.people, db.leave);
 
   return (
     <>
