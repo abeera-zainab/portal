@@ -59,6 +59,7 @@ export function UserManagement() {
   const people = useMemo(() => {
     const needle = query.trim().toLowerCase();
     return db.people
+      .filter((person) => person.role !== "hr")
       .filter((person) => {
         if (filter === "officer") return person.role === "officer" || Boolean(person.officer);
         if (filter === "mto") return Boolean(person.mto);
@@ -78,10 +79,11 @@ export function UserManagement() {
       .sort((a, b) => b.userId.localeCompare(a.userId));
   }, [db.people, filter, query]);
 
+  const visiblePeople = db.people.filter((person) => person.role !== "hr");
   const counts = {
-    total: db.people.length,
-    active: db.people.filter(isPersonActive).length,
-    admins: db.people.filter((person) => person.role === "admin").length,
+    total: visiblePeople.length,
+    active: visiblePeople.filter(isPersonActive).length,
+    admins: visiblePeople.filter((person) => person.role === "admin").length,
   };
 
   const run = async (action: () => Promise<void>) => {
@@ -96,7 +98,10 @@ export function UserManagement() {
   const submit = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await createPerson(form);
+      await createPerson({
+        ...form,
+        team: form.role === "admin" ? null : form.team,
+      });
       setForm({ ...form, name: "", username: "", email: "", password: "", userId: "" });
       setShowForm(false);
     });
@@ -160,7 +165,10 @@ export function UserManagement() {
             </label>
             <label>
               Role
-              <select value={form.role} onChange={(event) => setForm({ ...form, role: event.target.value as Role })}>
+              <select
+                value={form.role}
+                onChange={(event) => setForm({ ...form, role: event.target.value as Role })}
+              >
                 <option value="employee">Team</option>
                 <option value="officer">Officer</option>
                 <option value="team_lead">Team lead</option>

@@ -1,10 +1,11 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
-import type { Person, TeamId } from "./types";
+import type { Person } from "./types";
 import { AccountSettings } from "./AccountSettings";
 import { AttendanceCard } from "./AttendanceCard";
 import { AdminShell } from "./admin/AdminShell";
+import { HrShell } from "./admin/HrShell";
 import { AttendanceReport } from "./admin/AttendanceReport";
 import { LeaveInbox, TeamLeaveBoard } from "./LeaveReview";
 import { EmployeeDashboard } from "./EmployeeDashboard";
@@ -20,8 +21,6 @@ import {
   TeamIcon,
 } from "./ShellChrome";
 import {
-  TEAMS,
-  assignTeam,
   attendanceStatus,
   hasLeadRights,
   hasOfficerRank,
@@ -42,6 +41,7 @@ import {
 
 const roleLabel = (person: Person) => {
   if (person.role === "admin") return "Admin";
+  if (person.role === "hr") return "HR";
   const parts: string[] = [];
   if (person.role === "officer" || person.officer) parts.push("Officer");
   if (person.role === "team_lead") parts.push("Team lead");
@@ -64,6 +64,7 @@ export default function App() {
   }
   if (!session) return <Login />;
   if (session.role === "admin") return <AdminShell />;
+  if (session.role === "hr") return <HrShell />;
   return <StaffShell person={session} />;
 }
 
@@ -347,34 +348,31 @@ function TeamLeave({ person }: { person: Person }) {
 
 function TeamTools({ lead }: { lead: Person }) {
   const db = useDatabase();
-  const [choices, setChoices] = useState<Record<string, TeamId>>({});
-  const [error, setError] = useState("");
-  const members = teamRoster(lead, db.people).filter((person) => person.userId !== lead.userId);
+  const members = teamRoster(lead, db.people);
   const requests = reviewableLeave(lead, db.people, db.leave);
 
   return (
     <>
       <section className="card">
         <h2>Team</h2>
-        <p className="muted">Today’s attendance. Move someone onto another team.</p>
-        {error ? <p className="error">{error}</p> : null}
+        <p className="muted">People who report to you. Open a person to manage them.</p>
         <table>
           <thead>
             <tr>
               <th>Name</th>
               <th>User ID</th>
+              <th>Role</th>
               <th>Today</th>
-              <th>Move to</th>
             </tr>
           </thead>
           <tbody>
             {members.length === 0 ? (
               <tr>
-                <td colSpan={4}>No one else is on your team yet.</td>
+                <td colSpan={4}>No one reports to you yet.</td>
               </tr>
             ) : (
               members.map((member) => {
-                const nextTeam = choices[member.userId] ?? member.team ?? "ops";
+                const today = attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed));
                 return (
                   <tr key={member.userId}>
                     <td>
@@ -383,51 +381,17 @@ function TeamTools({ lead }: { lead: Person }) {
                       </Link>
                     </td>
                     <td>{member.userId}</td>
+                    <td>{roleLabel(member)}</td>
                     <td>
-                      {attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed)) === "late" ? (
+                      {today === "late" ? (
                         <span className="badge late">Late</span>
-                      ) : attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed)) === "leave" ? (
+                      ) : today === "leave" ? (
                         <span className="badge leave">Leave</span>
-                      ) : attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed)) === "on_time" ? (
+                      ) : today === "on_time" ? (
                         <span className="badge">On time</span>
                       ) : (
                         <span className="badge wait">Not in</span>
                       )}
-                    </td>
-                    <td>
-                      <div className="row">
-                        <select
-                          value={nextTeam}
-                          onChange={(event) =>
-                            setChoices((current) => ({
-                              ...current,
-                              [member.userId]: event.target.value as TeamId,
-                            }))
-                          }
-                        >
-                          {TEAMS.map((team) => (
-                            <option key={team.id} value={team.id}>
-                              {team.name}
-                            </option>
-                          ))}
-                        </select>
-                        <button
-                          className="btn secondary"
-                          disabled={nextTeam === member.team}
-                          onClick={() => {
-                            void (async () => {
-                              try {
-                                await assignTeam(member.userId, nextTeam);
-                                setError("");
-                              } catch (err) {
-                                setError(err instanceof Error ? err.message : "Could not move this person.");
-                              }
-                            })();
-                          }}
-                        >
-                          Move
-                        </button>
-                      </div>
                     </td>
                   </tr>
                 );

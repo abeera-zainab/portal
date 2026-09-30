@@ -173,13 +173,17 @@ button { cursor: pointer; }
   font-weight: 600;
 }
 .chip.on, .domain.on { background: var(--green); color: white; border-color: var(--green); }
+.table-card .domain-list { display: flex; flex-wrap: wrap; gap: 4px 6px; width: 248px; }
+.table-card .domain { padding: 2px 9px; font-size: 12px; line-height: 1.45; }
+.table-card select { padding: 4px 8px; font-size: 12px; border-radius: 8px; max-width: 190px; }
+.profile-facts select { width: 100%; max-width: 280px; padding: 6px 8px; font-size: 13px; font-weight: 600; }
 .table-card {
   background: var(--paper);
   border: 1px solid var(--line);
   border-radius: 18px;
   overflow: auto;
 }
-.table-card table { min-width: 980px; }
+.table-card table { min-width: 1120px; }
 .table-card.month-wrap { border: 0; border-radius: 0; background: transparent; }
 .table-card.month-wrap table { min-width: 640px; }
 .month-table th:nth-child(n + 2),

@@ -177,7 +177,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
   return (
     <>
       <p className="muted">
-        {todayLabel}. {teamLabel}. Click a count or a chart to see who it includes.
+        {todayLabel}. People who report to you{teamLabel ? ` · ${teamLabel}` : ""}. Click a count or a chart to see who it includes.
       </p>
 
       <div className="dash-stats">

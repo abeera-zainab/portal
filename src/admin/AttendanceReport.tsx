@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { AttendanceRecord, LeaveRequest } from "../types";
-import { formatClock, formatWorked, historyFor, isLateCheckIn, isOnLeave, personTeams, teamName, todayKey, useDatabase, useSession } from "../store";
-import { AssignedTags, PersonAdjust } from "./PersonDetail";
+import { deleteAttendance, formatClock, formatWorked, historyFor, isLateCheckIn, isOnLeave, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
+import { AssignedTags, canViewPerson, PersonAdjust } from "./PersonDetail";
 
 const FULL_DAY = 8 * 60;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -143,6 +143,143 @@ function AttendanceCalendar({
   );
 }
 
+const timeValue = (iso?: string) => {
+  if (!iso) return "";
+  const date = new Date(iso);
+  const hour = String(date.getHours()).padStart(2, "0");
+  const minute = String(date.getMinutes()).padStart(2, "0");
+  return `${hour}:${minute}`;
+};
+
+function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllowed: boolean }) {
+  const history = historyFor(userId);
+  const [drafts, setDrafts] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
+  const [adding, setAdding] = useState({ date: "", checkIn: "", checkOut: "" });
+  const [error, setError] = useState("");
+
+  const save = async (date: string, checkIn: string, checkOut: string) => {
+    try {
+      await saveAttendance(userId, date, checkIn, checkOut);
+      setDrafts((current) => {
+        const next = { ...current };
+        delete next[date];
+        return next;
+      });
+      setError("");
+      return true;
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not save this attendance.");
+      return false;
+    }
+  };
+
+  const remove = async (date: string) => {
+    if (!confirm(`Remove attendance for ${date}?`)) return;
+    try {
+      await deleteAttendance(userId, date);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not remove this attendance.");
+    }
+  };
+
+  return (
+    <section className="card">
+      <h2>Edit attendance</h2>
+      <p className="muted">Correct a check-in or check-out, or add a missing day. This is only available to HR.</p>
+      {error ? <p className="error">{error}</p> : null}
+      <form
+        className="row"
+        style={{ marginTop: 12 }}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void save(adding.date, adding.checkIn, adding.checkOut).then((saved) => {
+            if (saved) setAdding({ date: "", checkIn: "", checkOut: "" });
+          });
+        }}
+      >
+        <label>
+          Date
+          <input type="date" value={adding.date} onChange={(event) => setAdding({ ...adding, date: event.target.value })} required />
+        </label>
+        <label>
+          Check in
+          <input type="time" value={adding.checkIn} onChange={(event) => setAdding({ ...adding, checkIn: event.target.value })} required />
+        </label>
+        <label>
+          Check out
+          <input type="time" value={adding.checkOut} onChange={(event) => setAdding({ ...adding, checkOut: event.target.value })} />
+        </label>
+        <button className="btn" type="submit">
+          Add day
+        </button>
+      </form>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Check in</th>
+            <th>Check out</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {history.length === 0 ? (
+            <tr>
+              <td colSpan={5}>No attendance yet.</td>
+            </tr>
+          ) : (
+            history.map((record) => {
+              const draft = drafts[record.date] ?? {
+                checkIn: timeValue(record.checkIn),
+                checkOut: timeValue(record.checkOut),
+              };
+              const late = isLateCheckIn(new Date(record.checkIn), lateAllowed);
+              return (
+                <tr key={record.date}>
+                  <td>{record.date}</td>
+                  <td>
+                    <input
+                      type="time"
+                      value={draft.checkIn}
+                      onChange={(event) =>
+                        setDrafts((current) => ({ ...current, [record.date]: { ...draft, checkIn: event.target.value } }))
+                      }
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="time"
+                      value={draft.checkOut}
+                      onChange={(event) =>
+                        setDrafts((current) => ({ ...current, [record.date]: { ...draft, checkOut: event.target.value } }))
+                      }
+                    />
+                  </td>
+                  <td>
+                    <span className={late ? "badge late" : "badge"}>{late ? "Late" : "On time"}</span>
+                  </td>
+                  <td>
+                    <div className="row">
+                      <button className="btn" type="button" onClick={() => void save(record.date, draft.checkIn, draft.checkOut)}>
+                        Save
+                      </button>
+                      <button className="btn secondary" type="button" onClick={() => void remove(record.date)}>
+                        Remove
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            })
+          )}
+        </tbody>
+      </table>
+    </section>
+  );
+}
+
 export function AttendanceReport({ mine = false }: { mine?: boolean }) {
   const { userId: routeUserId = "" } = useParams();
   const session = useSession();
@@ -164,11 +301,27 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
     );
   }
 
+  if (person.role === "hr" && session?.role !== "hr") {
+    return (
+      <section className="manage">
+        <p>That person could not be found.</p>
+      </section>
+    );
+  }
+
+  if (!mine && !canViewPerson(session, person)) {
+    return (
+      <section className="manage">
+        <p>You can only open attendance for people who report to you.</p>
+      </section>
+    );
+  }
+
   return (
     <section className="manage">
       {mine ? null : (
-        <Link className="back-link" to={session?.role === "admin" ? "/attendance" : `/users/${person.userId}`}>
-          {session?.role === "admin" ? "← Back to attendance" : "← Back to user"}
+        <Link className="back-link" to={session?.role === "employee" || session?.role === "team_lead" || session?.role === "officer" ? `/users/${person.userId}` : "/attendance"}>
+          {session?.role === "hr" || session?.role === "admin" ? "← Back to attendance" : "← Back to user"}
         </Link>
       )}
       <div className="manage-head">
@@ -183,13 +336,14 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
               : ""}
           </p>
         </div>
-        {mine ? null : (
+        {mine || session?.role === "hr" ? null : (
           <Link className="btn secondary" to={`/users/${person.userId}`}>
             User detail
           </Link>
         )}
       </div>
-      {mine ? null : <PersonAdjust person={person} />}
+      {mine || session?.role === "hr" ? null : <PersonAdjust person={person} />}
+      {session?.role === "hr" && !mine ? <HrAttendanceEditor userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
       <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} />
       <div className="stat-row">
         <div className="card stat">

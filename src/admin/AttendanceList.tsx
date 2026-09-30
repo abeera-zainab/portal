@@ -8,6 +8,7 @@ import {
   teamName,
   todayKey,
   useDatabase,
+  useSession,
 } from "../store";
 import { AssignedTags } from "./PersonDetail";
 
@@ -49,14 +50,20 @@ function attendanceTotals(person: Person, attendance: Database["attendance"], le
 
 export function AttendanceList() {
   const db = useDatabase();
-  const people = [...db.people].sort((a, b) => a.name.localeCompare(b.name));
+  const session = useSession();
+  const hr = session?.role === "hr";
+  const people = db.people
+    .filter((person) => hr || person.role !== "hr")
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   return (
     <section className="manage">
       <div className="manage-head">
         <div>
           <h1>Attendance report</h1>
-          <p className="muted">Open a person to see every check-in and check-out.</p>
+          <p className="muted">
+            {hr ? "Open a person to correct check-in and check-out times." : "Open a person to see every check-in and check-out."}
+          </p>
         </div>
       </div>
       <div className="table-card">
@@ -82,7 +89,7 @@ export function AttendanceList() {
               return (
                 <tr key={person.userId}>
                   <td>
-                    <Link className="name-btn" to={`/users/${person.userId}`}>
+                    <Link className="name-btn" to={hr ? `/attendance/${person.userId}` : `/users/${person.userId}`}>
                       {person.name}
                     </Link>
                     <AssignedTags person={person} />
@@ -118,7 +125,7 @@ export function AttendanceList() {
                   <td>{totals.late}</td>
                   <td>
                     <Link className="text-btn" to={`/attendance/${person.userId}`}>
-                      View report
+                      {hr ? "Edit report" : "View report"}
                     </Link>
                   </td>
                 </tr>

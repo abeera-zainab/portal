@@ -1,12 +1,15 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Person, WorkMode } from "../types";
 import {
   attendanceStatus,
+  canReceiveReports,
   hasLeadRights,
   hasOfficerRank,
   hasTeamLeadRank,
+  isCiso,
+  isDirectReport,
   isOfficer,
   isPersonActive,
   personTeams,
@@ -14,7 +17,9 @@ import {
   setLateAllowed,
   setPersonActive,
   setPersonTags,
+  setReportsTo,
   setWorkMode,
+  reportingTitle,
   teamName,
   updatePersonAccount,
   useDatabase,
@@ -59,16 +64,18 @@ export function AssignedTags({ person }: { person: Person }) {
   );
 }
 
-function sharesTeam(viewer: Person, person: Person) {
-  const leadTeams = personTeams(viewer);
-  return personTeams(person).some((team) => leadTeams.includes(team));
+export function canViewPerson(viewer: Person | null, person: Person) {
+  if (!viewer) return false;
+  if (person.role === "hr" && viewer.role !== "hr") return false;
+  if (viewer.role === "admin" || viewer.role === "hr" || viewer.userId === person.userId) return true;
+  return isDirectReport(viewer, person);
 }
 
 export function canAdjustPerson(viewer: Person | null, person: Person) {
   if (!viewer) return false;
   if (viewer.role === "admin") return true;
-  if (person.role === "admin" || !sharesTeam(viewer, person)) return false;
   if (viewer.userId === person.userId) return hasLeadRights(viewer);
+  if (!isDirectReport(viewer, person)) return false;
   if (hasOfficerRank(viewer)) return !isOfficer(person);
   if (hasTeamLeadRank(viewer)) return !isOfficer(person) && person.role !== "team_lead" && !person.mto;
   return false;
@@ -172,8 +179,21 @@ function PencilIcon() {
 }
 
 function AccountCard({ person }: { person: Person }) {
+  const db = useDatabase();
   const session = useSession();
   const canEdit = canAdjustPerson(session, person);
+  const manager = db.people.find((item) => item.userId === person.reportsTo);
+  const managers = useMemo(
+    () =>
+      db.people
+        .filter(canReceiveReports)
+        .filter((item) => item.userId !== person.userId)
+        .sort((a, b) => {
+          if (isCiso(a) !== isCiso(b)) return isCiso(a) ? -1 : 1;
+          return a.name.localeCompare(b.name);
+        }),
+    [db.people, person.userId]
+  );
   const [editing, setEditing] = useState(false);
   const [name, setName] = useState(person.name);
   const [email, setEmail] = useState(person.email);
@@ -198,6 +218,16 @@ function AccountCard({ person }: { person: Person }) {
     setEmail(person.email);
     setUsername(person.username);
   }, [editing, person.name, person.email, person.username]);
+
+  const changeReports = async (reportsTo: string) => {
+    try {
+      setError("");
+      setSaved("");
+      await setReportsTo(person.userId, reportsTo);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update who this person reports to.");
+    }
+  };
 
   const save = async (event: FormEvent) => {
     event.preventDefault();
@@ -258,6 +288,27 @@ function AccountCard({ person }: { person: Person }) {
           <dt>Email</dt>
           <dd>{person.email}</dd>
         </div>
+        {person.role === "admin" ? null : (
+          <div>
+            <dt>Reports to</dt>
+            <dd>
+              {session?.role === "admin" ? (
+                <select value={person.reportsTo ?? ""} onChange={(event) => void changeReports(event.target.value)}>
+                  <option value="">Select a person</option>
+                  {managers.map((item) => (
+                    <option key={item.userId} value={item.userId}>
+                      {item.name} · {reportingTitle(item)}
+                    </option>
+                  ))}
+                </select>
+              ) : manager ? (
+                `${manager.name} · ${reportingTitle(manager)}`
+              ) : (
+                "—"
+              )}
+            </dd>
+          </div>
+        )}
         <div>
           <dt>Teams</dt>
           <dd>
@@ -324,6 +375,7 @@ const initials = (name: string) =>
 export function UserDetail({ backTo, backLabel }: { backTo: string; backLabel: string }) {
   const { userId = "" } = useParams();
   const db = useDatabase();
+  const session = useSession();
   const person = db.people.find((item) => item.userId === userId);
 
   if (!person) {
@@ -333,6 +385,28 @@ export function UserDetail({ backTo, backLabel }: { backTo: string; backLabel: s
           {backLabel}
         </Link>
         <p>That person could not be found.</p>
+      </section>
+    );
+  }
+
+  if (person.role === "hr" && session?.role !== "hr") {
+    return (
+      <section className="manage">
+        <Link className="back-link" to={backTo}>
+          {backLabel}
+        </Link>
+        <p>That person could not be found.</p>
+      </section>
+    );
+  }
+
+  if (!canViewPerson(session, person)) {
+    return (
+      <section className="manage">
+        <Link className="back-link" to={backTo}>
+          {backLabel}
+        </Link>
+        <p>You can only open people who report to you.</p>
       </section>
     );
   }

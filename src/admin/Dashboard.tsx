@@ -88,7 +88,7 @@ export function Dashboard() {
   const [marking, setMarking] = useState(false);
 
   const staff = useMemo(
-    () => db.people.filter((person) => person.role !== "admin" && isPersonActive(person)),
+    () => db.people.filter((person) => person.role !== "admin" && person.role !== "hr" && isPersonActive(person)),
     [db.people]
   );
 

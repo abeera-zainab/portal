@@ -6,7 +6,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const dataDir = path.join(__dirname, "..", "data", "pg");
+const dataDir = path.join(__dirname, "..", "data", process.env.PG_DATA || "pg");
 const PORT = Number(process.env.PORT || 4000);
 const PG_PORT = Number(process.env.PG_PORT || 5433);
 
@@ -29,7 +29,7 @@ const pgConfig = {
 };
 
 async function postgresIsUp() {
-  const client = new pg.Client(pgConfig);
+  const client = new pg.Client({ ...pgConfig, connectionTimeoutMillis: 2000 });
   try {
     await client.connect();
     await client.end();
@@ -77,6 +77,7 @@ await pool.query(`
   ALTER TABLE people ADD COLUMN IF NOT EXISTS work_mode TEXT;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS officer BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS mto BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE people ADD COLUMN IF NOT EXISTS reports_to TEXT REFERENCES people(user_id) ON DELETE SET NULL;
 
   CREATE TABLE IF NOT EXISTS attendance (
     user_id TEXT NOT NULL REFERENCES people(user_id) ON DELETE CASCADE,
@@ -104,6 +105,12 @@ await pool.query(`UPDATE people SET mto = TRUE, role = 'employee' WHERE role = '
 await pool.query(
   `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined)
    VALUES ('PSS001', 'PSS Admin', 'admin', 'admin@pss.local', 'admin123', 'admin', NULL, '{}', TRUE, CURRENT_DATE)
+   ON CONFLICT (user_id) DO NOTHING`
+);
+
+await pool.query(
+  `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined)
+   VALUES ('HR001', 'HR', 'hr', 'hr@pss.local', 'hr123456', 'hr', NULL, '{}', TRUE, CURRENT_DATE)
    ON CONFLICT (user_id) DO NOTHING`
 );
 
@@ -138,7 +145,7 @@ async function readState() {
   const [people, attendance, leave] = await Promise.all([
     pool.query(
       `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, work_mode, officer, mto,
-              to_char(joined, 'YYYY-MM-DD') AS joined
+              reports_to, to_char(joined, 'YYYY-MM-DD') AS joined
        FROM people ORDER BY user_id`
     ),
     pool.query(
@@ -168,6 +175,7 @@ async function readState() {
       officer: row.officer,
       mto: row.mto,
       workMode: row.work_mode || null,
+      reportsTo: row.reports_to || undefined,
     })),
     attendance: attendance.rows.map((row) => ({
       userId: row.user_id,
@@ -208,14 +216,21 @@ const hasTeamLeadRank = (row) =>
 
 const hasLeadRights = (row) => hasOfficerRank(row) || hasTeamLeadRank(row);
 
-const sharesTeamRow = (left, right) => {
-  const leftTeams = left?.teams?.length ? left.teams : left?.team ? [left.team] : [];
-  const rightTeams = right?.teams?.length ? right.teams : right?.team ? [right.team] : [];
-  return rightTeams.some((team) => leftTeams.includes(team));
+const isCisoRow = (row) =>
+  Boolean(row) && (row.user_id === "PSS002" || String(row.username || "").toLowerCase() === "hassanazwar");
+
+const rowTeams = (row) => (row?.teams?.length ? row.teams : row?.team ? [row.team] : []);
+
+const canReceiveReports = (row) => {
+  if (!row || row.active === false) return false;
+  if (isCisoRow(row)) return true;
+  if (row.role === "admin") return false;
+  return row.role === "team_lead" || row.role === "officer" || Boolean(row.officer) || Boolean(row.mto) || hasTeamLeadRank(row);
 };
 
 const canReviewMember = (who, member) => {
-  if (!member || member.role === "admin" || who.user_id === member.user_id || !sharesTeamRow(who, member)) return false;
+  if (!member || member.role === "admin" || who.user_id === member.user_id) return false;
+  if (member.reports_to !== who.user_id) return false;
   if (hasOfficerRank(who)) return !isOfficerRow(member);
   if (hasTeamLeadRank(who)) return !isOfficerRow(member) && member.role !== "team_lead" && !member.mto;
   return false;
@@ -314,6 +329,72 @@ app.post("/api/attendance/check-out", async (req, res) => {
   res.json({ state: await readState() });
 });
 
+const clockOn = (date, time) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  const [year, month, day] = date.split("-").map(Number);
+  const [hour, minute] = time.split(":").map(Number);
+  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+  return new Date(year, month - 1, day, hour, minute, 0, 0);
+};
+
+app.put("/api/attendance", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role !== "hr") {
+    res.status(403).json({ error: "Only HR can edit attendance." });
+    return;
+  }
+  const userId = String(req.body.userId || "");
+  const date = String(req.body.date || "");
+  const checkIn = clockOn(date, String(req.body.checkIn || ""));
+  const checkOutRaw = String(req.body.checkOut || "").trim();
+  const checkOut = checkOutRaw ? clockOn(date, checkOutRaw) : null;
+  if (!checkIn || (checkOutRaw && !checkOut)) {
+    res.status(400).json({ error: "Enter a valid date and time." });
+    return;
+  }
+  if (checkOut && checkOut.getTime() < checkIn.getTime()) {
+    res.status(400).json({ error: "Check out cannot be before check in." });
+    return;
+  }
+  const person = await pool.query(`SELECT user_id, late_allowed FROM people WHERE user_id = $1`, [userId]);
+  if (!person.rows[0]) {
+    res.status(404).json({ error: "Person not found." });
+    return;
+  }
+  const cutoff = new Date(checkIn);
+  if (person.rows[0].late_allowed) cutoff.setHours(11, 0, 0, 0);
+  else cutoff.setHours(9, 30, 0, 0);
+  const late = checkIn.getTime() > cutoff.getTime();
+  const worked = checkOut ? Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000)) : null;
+  await pool.query(
+    `INSERT INTO attendance (user_id, date, check_in, check_out, late, worked_minutes)
+     VALUES ($1,$2,$3,$4,$5,$6)
+     ON CONFLICT (user_id, date) DO UPDATE SET
+       check_in = EXCLUDED.check_in,
+       check_out = EXCLUDED.check_out,
+       late = EXCLUDED.late,
+       worked_minutes = EXCLUDED.worked_minutes`,
+    [userId, date, checkIn.toISOString(), checkOut ? checkOut.toISOString() : null, late, worked]
+  );
+  res.json({ state: await readState() });
+});
+
+app.delete("/api/attendance", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role !== "hr") {
+    res.status(403).json({ error: "Only HR can edit attendance." });
+    return;
+  }
+  const userId = String(req.body.userId || "");
+  const date = String(req.body.date || "");
+  const removed = await pool.query(`DELETE FROM attendance WHERE user_id = $1 AND date = $2`, [userId, date]);
+  if (!removed.rowCount) {
+    res.status(404).json({ error: "Attendance record not found." });
+    return;
+  }
+  res.json({ state: await readState() });
+});
+
 app.post("/api/people", async (req, res) => {
   const who = await actor(req);
   if (!who || who.role !== "admin") {
@@ -330,8 +411,22 @@ app.post("/api/people", async (req, res) => {
     res.status(400).json({ error: "Choose a valid role." });
     return;
   }
-  const team = role === "admin" ? null : body.team || null;
-  const teams = team ? [team] : [];
+  let team = role === "admin" ? null : body.team || null;
+  let teams = team ? [team] : [];
+  let reportsTo = role === "admin" ? null : String(body.reportsTo || "").trim() || null;
+  if (reportsTo) {
+    const managerResult = await pool.query(`SELECT * FROM people WHERE user_id = $1`, [reportsTo]);
+    const manager = managerResult.rows[0];
+    if (!canReceiveReports(manager)) {
+      res.status(400).json({ error: "Choose a team lead, an officer, or the CISO." });
+      return;
+    }
+    const managerTeams = rowTeams(manager);
+    if (managerTeams.length) {
+      teams = managerTeams;
+      team = managerTeams[0];
+    }
+  }
   const lateAllowed = role !== "admin" && Boolean(body.lateAllowed);
   const mto = role !== "admin" && Boolean(body.mto);
   const workMode = role === "admin" ? null : body.workMode || null;
@@ -367,9 +462,9 @@ app.post("/api/people", async (req, res) => {
   }
   try {
     await pool.query(
-      `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, work_mode, mto)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,CURRENT_DATE,$9,$10,$11)`,
-      [userId, name, username, email, password, role, team, teams, lateAllowed, workMode, mto]
+      `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, work_mode, mto, reports_to)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,TRUE,CURRENT_DATE,$9,$10,$11,$12)`,
+      [userId, name, username, email, password, role, team, teams, lateAllowed, workMode, mto, reportsTo]
     );
   } catch (error) {
     if (error && error.code === "23505") {
@@ -425,10 +520,8 @@ app.patch("/api/people/:userId", async (req, res) => {
       res.status(403).json({ error: "You cannot edit an admin." });
       return;
     }
-    const leadTeams = who.teams?.length ? who.teams : who.team ? [who.team] : [];
-    const memberTeams = person.teams?.length ? person.teams : person.team ? [person.team] : [];
-    if (!memberTeams.some((team) => leadTeams.includes(team))) {
-      res.status(403).json({ error: "You can only update people on your team." });
+    if (who.user_id !== userId && person.reports_to !== who.user_id) {
+      res.status(403).json({ error: "You can only update people who report to you." });
       return;
     }
     if (who.user_id !== userId && hasOfficerRank(who) && isOfficerRow(person)) {
@@ -513,6 +606,34 @@ app.patch("/api/people/:userId", async (req, res) => {
     res.status(400).json({ error: "Choose work from home, remote, or neither." });
     return;
   }
+  let reportsTo = person.reports_to || null;
+  if (req.body.reportsTo !== undefined) {
+    reportsTo = String(req.body.reportsTo || "").trim() || null;
+  }
+  if (role === "admin") reportsTo = null;
+  if (reportsTo) {
+    if (reportsTo === userId) {
+      res.status(400).json({ error: "A person cannot report to themselves." });
+      return;
+    }
+    const managerResult = await pool.query(`SELECT * FROM people WHERE user_id = $1`, [reportsTo]);
+    const manager = managerResult.rows[0];
+    if (!canReceiveReports(manager)) {
+      res.status(400).json({ error: "Choose a team lead, an officer, or the CISO." });
+      return;
+    }
+    if (manager.reports_to === userId) {
+      res.status(400).json({ error: "That person already reports to this account." });
+      return;
+    }
+    if (req.body.reportsTo !== undefined) {
+      const managerTeams = rowTeams(manager);
+      if (managerTeams.length) {
+        teams = managerTeams;
+        team = managerTeams[0];
+      }
+    }
+  }
   const account = accountFields(person, req.body || {});
   if (account.error) {
     res.status(400).json({ error: account.error });
@@ -520,8 +641,8 @@ app.patch("/api/people/:userId", async (req, res) => {
   }
   try {
     await pool.query(
-      `UPDATE people SET role = $2, team = $3, teams = $4, active = $5, late_allowed = $6, work_mode = $7, officer = $8, mto = $9, email = $10, username = $11, password = $12, name = $13 WHERE user_id = $1`,
-      [userId, role, teams[0] ?? null, teams, active, lateAllowed, workMode, officer, mto, account.email, account.username, account.password, account.name]
+      `UPDATE people SET role = $2, team = $3, teams = $4, active = $5, late_allowed = $6, work_mode = $7, officer = $8, mto = $9, email = $10, username = $11, password = $12, name = $13, reports_to = $14 WHERE user_id = $1`,
+      [userId, role, teams[0] ?? team ?? null, teams, active, lateAllowed, workMode, officer, mto, account.email, account.username, account.password, account.name, reportsTo]
     );
   } catch (error) {
     if (error && error.code === "23505") {

@@ -87,8 +87,9 @@ export const hasTeamLeadRank = (person: Person) =>
 export const hasLeadRights = (person: Person) => hasOfficerRank(person) || hasTeamLeadRank(person);
 
 export const canReviewLeave = (reviewer: Person, owner: Person) => {
-  if (owner.role === "admin" || reviewer.userId === owner.userId || !sharesTeam(reviewer, owner)) return false;
+  if (owner.role === "admin" || reviewer.userId === owner.userId) return false;
   if (reviewer.role === "admin") return true;
+  if (owner.reportsTo !== reviewer.userId) return false;
   if (hasOfficerRank(reviewer)) return !isOfficer(owner);
   if (hasTeamLeadRank(reviewer)) return !isOfficer(owner) && owner.role !== "team_lead" && !owner.mto;
   return false;
@@ -96,6 +97,7 @@ export const canReviewLeave = (reviewer: Person, owner: Person) => {
 
 export const roleTags = (person: Person): { id: string; label: string }[] => {
   if (person.role === "admin") return [{ id: "admin", label: "Admin" }];
+  if (person.role === "hr") return [{ id: "hr", label: "HR" }];
   const tags: { id: string; label: string }[] = [];
   if (isOfficer(person)) tags.push({ id: "officer", label: "Officer" });
   if (person.role === "team_lead") tags.push({ id: "team_lead", label: "Team lead" });
@@ -107,11 +109,46 @@ export const roleTags = (person: Person): { id: string; label: string }[] => {
 export const personTeams = (person: Person): TeamId[] =>
   person.teams?.length ? person.teams : person.team ? [person.team] : [];
 
+export const isCiso = (person: Person) =>
+  person.userId === "PSS002" || person.username.toLowerCase() === "hassanazwar";
+
+export const reportingTitle = (person: Person) => {
+  if (isCiso(person)) return "CISO";
+  const parts: string[] = [];
+  if (person.role === "officer" || person.officer) parts.push("Officer");
+  if (person.role === "team_lead") parts.push("Team lead");
+  if (person.role === "admin") parts.push("Admin");
+  return parts.join(", ") || "Team";
+};
+
+export const canReceiveReports = (person: Person) => {
+  if (!isPersonActive(person)) return false;
+  if (isCiso(person)) return true;
+  if (person.role === "admin") return false;
+  return (
+    person.role === "team_lead" ||
+    person.role === "officer" ||
+    Boolean(person.officer) ||
+    Boolean(person.mto) ||
+    hasTeamLeadRank(person)
+  );
+};
+
+export const isDirectReport = (lead: Person, person: Person) =>
+  person.userId !== lead.userId &&
+  person.role !== "admin" &&
+  isPersonActive(person) &&
+  person.reportsTo === lead.userId;
+
 export const sharesTeam = (left: Person, right: Person) =>
   personTeams(left).some((team) => personTeams(right).includes(team));
 
-export const teamRoster = (lead: Person, people: Person[]) =>
-  people.filter((person) => person.role !== "admin" && isPersonActive(person) && sharesTeam(lead, person));
+export const teamRoster = (lead: Person, people: Person[]) => {
+  if (lead.role === "admin") {
+    return people.filter((person) => person.role !== "admin" && isPersonActive(person));
+  }
+  return people.filter((person) => isDirectReport(lead, person));
+};
 
 export const reviewableLeave = (lead: Person, people: Person[], leave: LeaveRequest[]) =>
   leave.filter((request) => {
@@ -200,6 +237,14 @@ export const checkOut = async (userId: string) => {
   await mutate("/api/attendance/check-out", "POST", { userId });
 };
 
+export const saveAttendance = async (userId: string, date: string, checkIn: string, checkOutTime?: string) => {
+  await mutate("/api/attendance", "PUT", { userId, date, checkIn, checkOut: checkOutTime || "" });
+};
+
+export const deleteAttendance = async (userId: string, date: string) => {
+  await mutate("/api/attendance", "DELETE", { userId, date });
+};
+
 export const requestLeave = async (userId: string, from: string, to: string, reason: string) => {
   await mutate("/api/leave", "POST", { userId, from, to, reason });
 };
@@ -225,8 +270,18 @@ export const createPerson = async (input: {
   role: Role;
   team: TeamId | null;
   userId?: string;
+  reportsTo?: string;
 }) => {
   await mutate("/api/people", "POST", input);
+};
+
+export const setReportsTo = async (userId: string, reportsTo: string) => {
+  const manager = database.people.find((item) => item.userId === reportsTo);
+  const teams = manager ? personTeams(manager) : [];
+  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", {
+    reportsTo,
+    ...(teams.length ? { teams, team: teams[0] } : {}),
+  });
 };
 
 export const assignTeam = async (userId: string, team: TeamId) => {
