@@ -630,7 +630,7 @@ app.post("/api/leave/:id/review", async (req, res) => {
     res.status(404).json({ error: "Leave request not found." });
     return;
   }
-  if (request.status !== "pending") {
+  if (request.status !== "pending" && who.role !== "admin") {
     res.status(400).json({ error: "This request was already reviewed." });
     return;
   }
@@ -654,6 +654,20 @@ app.post("/api/leave/:id/review", async (req, res) => {
     `UPDATE leave_requests SET status = $2, rejection_reason = $3 WHERE id = $1`,
     [req.params.id, decision, decision === "rejected" ? note : null]
   );
+  res.json({ state: await readState() });
+});
+
+app.delete("/api/leave/:id", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role !== "admin") {
+    res.status(403).json({ error: "Only an admin can delete leave." });
+    return;
+  }
+  const removed = await pool.query(`DELETE FROM leave_requests WHERE id = $1`, [req.params.id]);
+  if (!removed.rowCount) {
+    res.status(404).json({ error: "Leave request not found." });
+    return;
+  }
   res.json({ state: await readState() });
 });
 

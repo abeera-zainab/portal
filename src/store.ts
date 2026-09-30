@@ -213,6 +213,10 @@ export const reviewLeave = async (
   await mutate(`/api/leave/${requestId}/review`, "POST", { decision, rejectionReason });
 };
 
+export const deleteLeave = async (requestId: string) => {
+  await mutate(`/api/leave/${requestId}`, "DELETE");
+};
+
 export const createPerson = async (input: {
   name: string;
   username: string;

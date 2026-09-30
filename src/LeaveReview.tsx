@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { PeriodChart } from "./PeriodChart";
 import type { LeaveRequest, Person } from "./types";
-import { isOnLeave, personTeams, reviewableLeave, reviewLeave, teamName, teamRoster, todayKey, useDatabase, useSession } from "./store";
+import { deleteLeave, isOnLeave, personTeams, reviewableLeave, reviewLeave, teamName, teamRoster, todayKey, useDatabase, useSession } from "./store";
 
 const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
@@ -259,6 +259,8 @@ export function LeaveInbox({
   title: string;
 }) {
   const db = useDatabase();
+  const session = useSession();
+  const isAdmin = session?.role === "admin";
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [error, setError] = useState("");
 
@@ -271,10 +273,28 @@ export function LeaveInbox({
     }
   };
 
+  const remove = async (request: LeaveRequest) => {
+    const owner = db.people.find((person) => person.userId === request.userId);
+    const name = owner?.name ?? request.userId;
+    if (!confirm(`Delete ${name}'s leave from ${request.from}${request.to !== request.from ? ` to ${request.to}` : ""}? This cannot be undone.`)) {
+      return;
+    }
+    try {
+      await deleteLeave(request.id);
+      setError("");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not delete this leave.");
+    }
+  };
+
   return (
     <section className="card">
       <h2>{title}</h2>
-      <p className="muted">A rejection needs a reason. That reason is what the employee sees.</p>
+      <p className="muted">
+        {isAdmin
+          ? "You can approve or reject a request again after it has been decided, or delete it. A rejection needs a reason. That reason is what the employee sees."
+          : "A rejection needs a reason. That reason is what the employee sees."}
+      </p>
       {error ? <p className="error">{error}</p> : null}
       <table>
         <thead>
@@ -315,7 +335,7 @@ export function LeaveInbox({
                     </span>
                   </td>
                   <td>
-                    {request.status === "pending" && request.userId !== reviewerId ? (
+                    {request.userId !== reviewerId && (isAdmin || request.status === "pending") ? (
                       <div className="row">
                         <input
                           placeholder="Rejection reason"
@@ -324,17 +344,36 @@ export function LeaveInbox({
                             setNotes((current) => ({ ...current, [request.id]: event.target.value }))
                           }
                         />
-                        <button className="btn" onClick={() => review(request.id, "approved")}>
+                        <button
+                          className="btn"
+                          disabled={request.status === "approved"}
+                          onClick={() => review(request.id, "approved")}
+                        >
                           Approve
                         </button>
-                        <button className="btn danger" onClick={() => review(request.id, "rejected")}>
+                        <button
+                          className="btn danger"
+                          disabled={request.status === "rejected"}
+                          onClick={() => review(request.id, "rejected")}
+                        >
                           Reject
                         </button>
+                        {isAdmin ? (
+                          <button className="btn secondary" onClick={() => remove(request)}>
+                            Delete
+                          </button>
+                        ) : null}
                       </div>
                     ) : request.status === "rejected" ? (
                       request.rejectionReason
                     ) : request.userId === reviewerId ? (
-                      "Your request"
+                      isAdmin ? (
+                        <button className="btn secondary" onClick={() => remove(request)}>
+                          Delete
+                        </button>
+                      ) : (
+                        "Your request"
+                      )
                     ) : (
                       "Approved"
                     )}
@@ -359,7 +398,9 @@ export function LeavePage() {
       <div className="manage-head">
         <div>
           <h1>Leave</h1>
-          <p className="muted">Accepted and rejected requests are counted here.</p>
+          <p className="muted">
+            Accepted and rejected requests are counted here. You can change a decision or delete a leave.
+          </p>
         </div>
       </div>
       <div className="dash-stats">
