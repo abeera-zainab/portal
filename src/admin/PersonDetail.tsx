@@ -10,6 +10,7 @@ import {
   hasTeamLeadRank,
   isCiso,
   isDirectReport,
+  isHrPss,
   isOfficer,
   isPersonActive,
   personTeams,
@@ -68,6 +69,7 @@ export function AssignedTags({ person }: { person: Person }) {
 
 export function canViewPerson(viewer: Person | null, person: Person) {
   if (!viewer) return false;
+  if (isHrPss(viewer) && (person.role === "hr" || person.role === "admin")) return false;
   if (person.role === "hr" && viewer.role !== "hr") return false;
   if (viewer.role === "admin" || viewer.role === "hr" || viewer.userId === person.userId) return true;
   return isDirectReport(viewer, person);

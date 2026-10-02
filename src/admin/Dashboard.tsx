@@ -23,6 +23,7 @@ import {
   isPersonActive,
   formatClock,
   personTeams,
+  roleTags,
   teamName,
   todayKey,
   useDatabase,
@@ -80,9 +81,10 @@ const kindFromLabel = (label: string): Kind => {
   return "not_in";
 };
 
-export function Dashboard() {
+export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
   const db = useDatabase();
   const session = useSession();
+  const viewer = variant === "hr";
   const [range, setRange] = useState<"week" | "month">("week");
   const [focus, setFocus] = useState<Focus | null>(null);
   const [marking, setMarking] = useState(false);
@@ -225,23 +227,25 @@ export function Dashboard() {
       <div className="manage-head">
         <div>
           <h1>Dashboard</h1>
-          {marking ? null : (
+          {marking && !viewer ? null : (
             <p className="muted">
               {todayLabel}. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
             </p>
           )}
         </div>
-        <div className="filters">
-          <button type="button" className={marking ? "chip" : "chip on"} onClick={() => setMarking(false)}>
-            Overview
-          </button>
-          <button type="button" className={marking ? "chip on" : "chip"} onClick={() => setMarking(true)}>
-            Mark your attendance
-          </button>
-        </div>
+        {viewer ? null : (
+          <div className="filters">
+            <button type="button" className={marking ? "chip" : "chip on"} onClick={() => setMarking(false)}>
+              Overview
+            </button>
+            <button type="button" className={marking ? "chip on" : "chip"} onClick={() => setMarking(true)}>
+              Mark your attendance
+            </button>
+          </div>
+        )}
       </div>
 
-      {marking && session ? <AttendanceCard person={session} heading="Mark your attendance" /> : <>
+      {marking && session && !viewer ? <AttendanceCard person={session} heading="Mark your attendance" /> : <>
       <div className="dash-stats">
         <button
           type="button"
@@ -393,10 +397,13 @@ export function Dashboard() {
                               : "";
                     return (
                       <li key={person.userId}>
-                        <Link className="roster-person roster-row" to={`/users/${person.userId}`}>
+                        <Link className="roster-person roster-row" to={viewer ? `/attendance/${person.userId}` : `/users/${person.userId}`}>
                           <span>
                             {person.name}
-                            <small>{person.userId}</small>
+                            <small>
+                              {viewer ? `${roleTags(person).map((tag) => tag.label).join(" · ")} · ` : ""}
+                              {person.userId}
+                            </small>
                           </span>
                           <span>{formatClock(record?.checkIn)}</span>
                           <span>{formatClock(record?.checkOut)}</span>

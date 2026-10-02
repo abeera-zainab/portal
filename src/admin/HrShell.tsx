@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { AccountSettings } from "../AccountSettings";
-import { AccountSettingsButton, LeaveIcon, ReportIcon, SideLink, TeamIcon } from "../ShellChrome";
+import { AccountSettingsButton, DashboardIcon, LeaveIcon, ReportIcon, SideLink, TeamIcon } from "../ShellChrome";
 import {
   TEAMS,
   attendanceStatus,
@@ -19,6 +19,7 @@ import {
 } from "../store";
 import { AttendanceList } from "./AttendanceList";
 import { AttendanceReport } from "./AttendanceReport";
+import { Dashboard } from "./Dashboard";
 
 export function HrShell() {
   const session = useSession();
@@ -35,6 +36,11 @@ export function HrShell() {
         </div>
         <p className="nav-label">Menu</p>
         <nav>
+          {pss ? (
+            <SideLink to="/dashboard" end icon={<DashboardIcon />}>
+              Dashboard
+            </SideLink>
+          ) : null}
           <SideLink to="/attendance" icon={<ReportIcon />}>
             Attendance
           </SideLink>
@@ -71,12 +77,13 @@ export function HrShell() {
         </header>
         <div className="admin-page">
           <Routes>
+            {pss ? <Route path="/dashboard" element={<Dashboard variant="hr" />} /> : null}
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/:userId" element={<AttendanceReport />} />
             <Route path="/teams" element={<HrTeams />} />
             {grant ? <Route path="/leave" element={<GrantLeave />} /> : null}
             <Route path="/account" element={<AccountSettings person={session} />} />
-            <Route path="*" element={<Navigate to="/attendance" replace />} />
+            <Route path="*" element={<Navigate to={pss ? "/dashboard" : "/attendance"} replace />} />
           </Routes>
         </div>
       </div>
@@ -160,9 +167,13 @@ function GrantLeave() {
   const [error, setError] = useState("");
   const [saved, setSaved] = useState("");
   const people = db.people
-    .filter((person) => person.role !== "hr" && isPersonActive(person))
+    .filter((person) => person.role !== "hr" && person.role !== "admin" && isPersonActive(person))
     .sort((a, b) => a.name.localeCompare(b.name));
-  const recorded = db.leave.filter((request) => request.status === "approved");
+  const recorded = db.leave.filter((request) => {
+    if (request.status !== "approved") return false;
+    const owner = db.people.find((person) => person.userId === request.userId);
+    return Boolean(owner && owner.role !== "hr" && owner.role !== "admin");
+  });
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
@@ -182,7 +193,7 @@ function GrantLeave() {
       <div className="manage-head">
         <div>
           <h1>Leave</h1>
-          <p className="muted">Record approved leave for anyone. It applies as soon as you save it.</p>
+          <p className="muted">Record approved leave for people on the teams. HR and admin accounts are not listed. It applies as soon as you save it.</p>
         </div>
       </div>
       <section className="card">

@@ -10,6 +10,7 @@ import {
   formatClock,
   isHrPss,
   personTeams,
+  roleTags,
   teamName,
   todayKey,
   useDatabase,
@@ -32,6 +33,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
       name: person.name,
       userId: person.userId,
       teams: personTeams(person).map((team) => teamName(team)).join(", ") || "No team",
+      roles: roleTags(person),
       checkIn: record ? formatClock(record.checkIn) : "—",
       checkOut: record?.checkOut ? formatClock(record.checkOut) : "—",
       status: dayStatusLabel(status, "Absent"),
@@ -52,6 +54,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
       (row) => `<tr>
         <td>${escapeHtml(row.name)}</td>
         <td>${escapeHtml(row.userId)}</td>
+        <td class="tags">${row.roles.map((tag) => `<span class="tag ${escapeHtml(tag.id)}">${escapeHtml(tag.label)}</span>`).join("")}</td>
         <td>${escapeHtml(row.teams)}</td>
         <td>${escapeHtml(row.checkIn)}</td>
         <td>${escapeHtml(row.checkOut)}</td>
@@ -73,6 +76,11 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     table { width: 100%; border-collapse: collapse; margin-top: 24px; }
     th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e4d9c8; }
     th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6d645b; }
+    .tags { display: flex; flex-wrap: wrap; gap: 4px; }
+    .tag { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #f3ecdf; color: #4a4036; }
+    .tag.officer { background: #f4e7cf; color: #9a5b12; }
+    .tag.team_lead { background: #e5f2eb; color: #1f6b4a; }
+    .tag.mto { background: #efe4c8; color: #6b4e12; }
     @media print {
       body { margin: 12px; }
       button { display: none; }
@@ -93,6 +101,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
       <tr>
         <th>Name</th>
         <th>User ID</th>
+        <th>Role</th>
         <th>Teams</th>
         <th>Check in</th>
         <th>Check out</th>
@@ -100,7 +109,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
       </tr>
     </thead>
     <tbody>
-      ${body || "<tr><td colspan=\"6\">No one to report.</td></tr>"}
+      ${body || "<tr><td colspan=\"7\">No one to report.</td></tr>"}
     </tbody>
   </table>
 </body>
@@ -122,9 +131,13 @@ export function AttendanceList() {
   const pss = Boolean(session && isHrPss(session));
   const [reportDay, setReportDay] = useState(todayKey());
   const people = db.people
-    .filter((person) => hr || person.role !== "hr")
+    .filter((person) => {
+      if (pss) return person.role !== "hr" && person.role !== "admin";
+      if (hr) return true;
+      return person.role !== "hr";
+    })
     .sort((a, b) => a.name.localeCompare(b.name));
-  const reportPeople = people.filter((person) => person.role !== "hr");
+  const reportPeople = people.filter((person) => person.role !== "hr" && person.role !== "admin");
 
   return (
     <section className="manage">

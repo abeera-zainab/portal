@@ -704,8 +704,8 @@ app.post("/api/leave/grant", async (req, res) => {
     res.status(404).json({ error: "Person not found." });
     return;
   }
-  if (person.rows[0].role === "hr") {
-    res.status(400).json({ error: "Leave cannot be recorded for an HR account." });
+  if (person.rows[0].role === "hr" || person.rows[0].role === "admin") {
+    res.status(400).json({ error: "Leave cannot be recorded for an HR or admin account." });
     return;
   }
   const id = crypto.randomUUID();

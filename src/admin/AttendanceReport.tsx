@@ -322,7 +322,7 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
   if (!mine && !canViewPerson(session, person)) {
     return (
       <section className="manage">
-        <p>You can only open attendance for people who report to you.</p>
+        <p>{session?.role === "hr" ? "That person could not be found." : "You can only open attendance for people who report to you."}</p>
       </section>
     );
   }
