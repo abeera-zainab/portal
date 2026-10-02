@@ -114,6 +114,12 @@ await pool.query(
    ON CONFLICT (user_id) DO NOTHING`
 );
 
+await pool.query(
+  `INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined)
+   VALUES ('HR002', 'HR PSS', 'hr-pss', 'hr-pss@pss.local', 'hr123456', 'hr', NULL, '{}', TRUE, CURRENT_DATE)
+   ON CONFLICT (user_id) DO NOTHING`
+);
+
 await pool.query(`CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
 const bundledSeed = await pool.query(`SELECT 1 FROM app_meta WHERE key = 'bundled_seed'`);
 const seedPath = path.join(__dirname, "seed.sql");
@@ -201,11 +207,13 @@ async function actor(req) {
   const userId = req.header("x-user-id");
   if (!userId) return null;
   const result = await pool.query(
-    `SELECT user_id, role, team, teams, officer, mto FROM people WHERE user_id = $1 AND active = TRUE`,
+    `SELECT user_id, username, role, team, teams, officer, mto FROM people WHERE user_id = $1 AND active = TRUE`,
     [userId]
   );
   return result.rows[0] ?? null;
 }
+
+const isHrPss = (row) => Boolean(row) && row.role === "hr" && String(row.username || "").toLowerCase() === "hr-pss";
 
 const isOfficerRow = (row) => Boolean(row) && (row.role === "officer" || row.officer);
 
@@ -339,7 +347,7 @@ const clockOn = (date, time) => {
 
 app.put("/api/attendance", async (req, res) => {
   const who = await actor(req);
-  if (!who || who.role !== "hr") {
+  if (!who || who.role !== "hr" || isHrPss(who)) {
     res.status(403).json({ error: "Only HR can edit attendance." });
     return;
   }
@@ -381,7 +389,7 @@ app.put("/api/attendance", async (req, res) => {
 
 app.delete("/api/attendance", async (req, res) => {
   const who = await actor(req);
-  if (!who || who.role !== "hr") {
+  if (!who || who.role !== "hr" || isHrPss(who)) {
     res.status(403).json({ error: "Only HR can edit attendance." });
     return;
   }
@@ -670,6 +678,42 @@ app.delete("/api/people/:userId", async (req, res) => {
     res.status(404).json({ error: "Person not found." });
     return;
   }
+  res.json({ state: await readState() });
+});
+
+app.post("/api/leave/grant", async (req, res) => {
+  const who = await actor(req);
+  if (!isHrPss(who)) {
+    res.status(403).json({ error: "Only the HR PSS account can record leave for other people." });
+    return;
+  }
+  const userId = String(req.body.userId || "");
+  const from = String(req.body.from || "");
+  const to = String(req.body.to || "");
+  const reason = String(req.body.reason || "").trim();
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || !reason) {
+    res.status(400).json({ error: "Enter the person, dates, and a reason." });
+    return;
+  }
+  if (to < from) {
+    res.status(400).json({ error: "The end date cannot be before the start date." });
+    return;
+  }
+  const person = await pool.query(`SELECT user_id, role FROM people WHERE user_id = $1`, [userId]);
+  if (!person.rows[0]) {
+    res.status(404).json({ error: "Person not found." });
+    return;
+  }
+  if (person.rows[0].role === "hr") {
+    res.status(400).json({ error: "Leave cannot be recorded for an HR account." });
+    return;
+  }
+  const id = crypto.randomUUID();
+  await pool.query(
+    `INSERT INTO leave_requests (id, user_id, from_date, to_date, reason, status)
+     VALUES ($1,$2,$3,$4,$5,'approved')`,
+    [id, userId, from, to, reason]
+  );
   res.json({ state: await readState() });
 });
 

@@ -46,6 +46,7 @@ const periodDays = (mode: "week" | "month", joined?: string) => {
 const statusLabel = (status: string) => {
   if (status === "on_time") return "On time";
   if (status === "late") return "Late";
+  if (status === "absentee") return "Absentee";
   if (status === "leave") return "On leave";
   return "Not in";
 };
@@ -77,7 +78,7 @@ export function EmployeeDashboard({ person }: { person: Person }) {
           late: status === "late" ? 1 : 0,
           present: status === "on_time" || status === "late" ? 1 : 0,
           leave: status === "leave" ? 1 : 0,
-          absent: status === "not_in" ? 1 : 0,
+          absent: status === "not_in" || status === "absentee" ? 1 : 0,
         };
       }),
     [db.attendance, db.leave, person.joined, person.lateAllowed, person.userId, range]

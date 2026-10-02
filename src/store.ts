@@ -159,6 +159,22 @@ export const reviewableLeave = (lead: Person, people: Person[], leave: LeaveRequ
 
 export const isPersonActive = (person: Person) => person.active !== false;
 
+export const isHrPss = (person: Person) => person.role === "hr" && person.username.toLowerCase() === "hr-pss";
+
+export const canEditAttendance = (person: Person | null) => Boolean(person && person.role === "hr" && !isHrPss(person));
+
+export const canGrantLeave = (person: Person | null) => Boolean(person && isHrPss(person));
+
+export const canSeeLate = (person: Person | null) =>
+  Boolean(
+    person &&
+      (person.role === "admin" ||
+        person.role === "hr" ||
+        person.role === "team_lead" ||
+        hasTeamLeadRank(person) ||
+        hasOfficerRank(person))
+  );
+
 export const todayKey = (date = new Date()) => {
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
@@ -177,19 +193,68 @@ export const isOnLeave = (userId: string, leave: Database["leave"], day = todayK
     (request) => request.userId === userId && request.status === "approved" && request.from <= day && request.to >= day
   );
 
+export type DayStatus = "on_time" | "late" | "leave" | "not_in" | "absentee";
+
+const shiftDay = (day: string, delta: number) => {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + delta);
+  return todayKey(date);
+};
+
+const isWeekend = (day: string) => {
+  const weekday = new Date(`${day}T12:00:00`).getDay();
+  return weekday === 0 || weekday === 6;
+};
+
+const checkedInLate = (userId: string, attendance: Database["attendance"], day: string, lateAllowed: boolean) => {
+  const record = attendance.find((item) => item.userId === userId && item.date === day);
+  return Boolean(record && isLateCheckIn(new Date(record.checkIn), lateAllowed));
+};
+
 export const attendanceStatus = (
   userId: string,
   attendance: Database["attendance"],
   leave: Database["leave"],
   now = new Date(),
   lateAllowed = false
-) => {
+): DayStatus => {
   const day = todayKey(now);
-  if (isOnLeave(userId, leave, day)) return "leave" as const;
+  if (isOnLeave(userId, leave, day)) return "leave";
   const record = attendance.find((item) => item.userId === userId && item.date === day);
-  if (record && isLateCheckIn(new Date(record.checkIn), lateAllowed)) return "late" as const;
-  if (record) return "on_time" as const;
-  return "not_in" as const;
+  if (!record) return "not_in";
+  if (!isLateCheckIn(new Date(record.checkIn), lateAllowed)) return "on_time";
+  let cursor = shiftDay(day, -1);
+  let priorLate = 0;
+  for (let guard = 0; priorLate < 3 && guard < 40; guard += 1) {
+    if (isWeekend(cursor)) {
+      cursor = shiftDay(cursor, -1);
+      continue;
+    }
+    if (isOnLeave(userId, leave, cursor)) {
+      cursor = shiftDay(cursor, -1);
+      continue;
+    }
+    if (!checkedInLate(userId, attendance, cursor, lateAllowed)) break;
+    priorLate += 1;
+    cursor = shiftDay(cursor, -1);
+  }
+  return priorLate >= 3 ? "absentee" : "late";
+};
+
+export const dayStatusLabel = (status: DayStatus, absentLabel = "Not in") => {
+  if (status === "on_time") return "On time";
+  if (status === "late") return "Late";
+  if (status === "leave") return "Leave";
+  if (status === "absentee") return "Absentee";
+  return absentLabel;
+};
+
+export const dayStatusClass = (status: DayStatus) => {
+  if (status === "late") return "badge late";
+  if (status === "absentee") return "badge no";
+  if (status === "leave") return "badge leave";
+  if (status === "on_time") return "badge";
+  return "badge wait";
 };
 
 export const formatClock = (iso?: string) => {
@@ -247,6 +312,10 @@ export const deleteAttendance = async (userId: string, date: string) => {
 
 export const requestLeave = async (userId: string, from: string, to: string, reason: string) => {
   await mutate("/api/leave", "POST", { userId, from, to, reason });
+};
+
+export const grantLeave = async (userId: string, from: string, to: string, reason: string) => {
+  await mutate("/api/leave/grant", "POST", { userId, from, to, reason });
 };
 
 export const reviewLeave = async (

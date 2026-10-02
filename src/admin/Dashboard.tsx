@@ -185,7 +185,7 @@ export function Dashboard() {
       if (focus.teamId && !personTeams(person).includes(focus.teamId)) return false;
       const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
       if (focus.kind === "present") return status === "on_time" || status === "late";
-      if (focus.kind === "not_in") return status === "not_in";
+      if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
       return status === focus.kind;
     });
   }, [db, focus, staff]);
@@ -225,7 +225,11 @@ export function Dashboard() {
       <div className="manage-head">
         <div>
           <h1>Dashboard</h1>
-          {marking ? null : <p className="muted">{todayLabel}. Click a count or a chart to see who it includes.</p>}
+          {marking ? null : (
+            <p className="muted">
+              {todayLabel}. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
+            </p>
+          )}
         </div>
         <div className="filters">
           <button type="button" className={marking ? "chip" : "chip on"} onClick={() => setMarking(false)}>
@@ -246,6 +250,14 @@ export function Dashboard() {
         >
           <span>Total</span>
           <strong>{stats.teamTotal}</strong>
+        </button>
+        <button
+          type="button"
+          className={focus?.kind === "late" ? "card stat dash-hit on" : "card stat dash-hit"}
+          onClick={() => openToday("late", "Late today")}
+        >
+          <span>Late today</span>
+          <strong className="tone-amber">{stats.late}</strong>
         </button>
         {stats.teams.map((team) => (
           <button
@@ -372,6 +384,8 @@ export function Dashboard() {
                         ? leaveSpan(person)
                         : status === "late"
                           ? "Late"
+                          : status === "absentee"
+                            ? "Absentee"
                           : status === "on_time"
                             ? "On time"
                             : status === "not_in"

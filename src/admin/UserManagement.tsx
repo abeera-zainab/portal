@@ -332,6 +332,8 @@ function UserRow({
       <td>
         {person.role !== "admin" && today === "late" ? (
           <span className="badge late">Late</span>
+        ) : person.role !== "admin" && today === "absentee" ? (
+          <span className="badge no">Absentee</span>
         ) : person.role !== "admin" && today === "on_time" ? (
           <span className="badge">On time</span>
         ) : person.role !== "admin" && today === "leave" ? (

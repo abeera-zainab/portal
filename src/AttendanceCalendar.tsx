@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AttendanceRecord, LeaveRequest } from "./types";
-import { isLateCheckIn, isOnLeave, todayKey } from "./store";
+import { attendanceStatus, isOnLeave, todayKey } from "./store";
 
 const FULL_DAY = 8 * 60;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -118,13 +118,16 @@ export function AttendanceCalendar({
               ? Math.max(0, Math.round((Date.now() - new Date(record.checkIn).getTime()) / 60000))
               : undefined);
           const open = Boolean(record && !record.checkOut);
-          const late = Boolean(record && isLateCheckIn(new Date(record.checkIn), lateAllowed));
-          const tone = onLeave ? "leave" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
+          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const late = status === "late";
+          const absentee = status === "absentee";
+          const tone = onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
           const width = minutes === undefined ? 0 : Math.min(100, Math.round((minutes / FULL_DAY) * 100));
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
               {onLeave ? <span className="badge no">On leave</span> : null}
+              {absentee ? <span className="badge no">Absentee</span> : null}
               {!onLeave && minutes !== undefined ? (
                 <>
                   <span className={`calendar-hours ${tone}`}>{hoursLabel(minutes)}</span>

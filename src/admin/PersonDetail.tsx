@@ -42,7 +42,8 @@ export function AssignedTags({ person }: { person: Person }) {
   const status = person.role === "admin" ? null : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
   const onLeave = status === "leave";
   const lateToday = status === "late";
-  if (!roles.length && !places.length && !onLeave && !lateToday) return null;
+  const absenteeToday = status === "absentee";
+  if (!roles.length && !places.length && !onLeave && !lateToday && !absenteeToday) return null;
   return (
     <div className="role-tags">
       {roles.map((tag) => (
@@ -60,6 +61,7 @@ export function AssignedTags({ person }: { person: Person }) {
       ))}
       {onLeave ? <span className="badge leave">Leave</span> : null}
       {lateToday ? <span className="badge late">Late</span> : null}
+      {absenteeToday ? <span className="badge no">Absentee</span> : null}
     </div>
   );
 }

@@ -62,7 +62,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
       late: status === "late" ? 1 : 0,
       present: status === "on_time" || status === "late" ? 1 : 0,
       leave: status === "leave" ? 1 : 0,
-      absent: status === "not_in" ? 1 : 0,
+      absent: status === "not_in" || status === "absentee" ? 1 : 0,
     };
   });
 

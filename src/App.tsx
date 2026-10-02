@@ -385,6 +385,8 @@ function TeamTools({ lead }: { lead: Person }) {
                     <td>
                       {today === "late" ? (
                         <span className="badge late">Late</span>
+                      ) : today === "absentee" ? (
+                        <span className="badge no">Absentee</span>
                       ) : today === "leave" ? (
                         <span className="badge leave">Leave</span>
                       ) : today === "on_time" ? (

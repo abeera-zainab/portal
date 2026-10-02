@@ -1,9 +1,14 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Database, Person } from "../types";
+import { attendanceTotals } from "../attendanceStats";
 import {
   attendanceStatus,
-  isLateCheckIn,
-  isOnLeave,
+  canEditAttendance,
+  dayStatusClass,
+  dayStatusLabel,
+  formatClock,
+  isHrPss,
   personTeams,
   teamName,
   todayKey,
@@ -12,49 +17,114 @@ import {
 } from "../store";
 import { AssignedTags } from "./PersonDetail";
 
-const eachDay = (from: string, to: string) => {
-  const days: string[] = [];
-  const cursor = new Date(`${from}T00:00:00`);
-  const end = new Date(`${to}T00:00:00`);
-  if (Number.isNaN(cursor.getTime()) || Number.isNaN(end.getTime()) || cursor > end) return days;
-  while (cursor <= end) {
-    days.push(todayKey(cursor));
-    cursor.setDate(cursor.getDate() + 1);
-  }
-  return days;
-};
+const escapeHtml = (value: string) =>
+  value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
-function attendanceTotals(person: Person, attendance: Database["attendance"], leave: Database["leave"]) {
-  const today = todayKey();
-  const history = attendance.filter((record) => record.userId === person.userId);
-  const earliest = history.reduce((soonest, record) => (record.date < soonest ? record.date : soonest), today);
-  const start = person.joined && person.joined < earliest ? person.joined : earliest;
-  const byDate = new Map(history.map((record) => [record.date, record]));
-  let present = 0;
-  let absent = 0;
-  let leaves = 0;
-  let late = 0;
-  for (const day of eachDay(start, today)) {
-    const record = byDate.get(day);
-    if (record) {
-      present += 1;
-      if (isLateCheckIn(new Date(record.checkIn), Boolean(person.lateAllowed))) late += 1;
-    } else if (isOnLeave(person.userId, leave, day)) {
-      leaves += 1;
-    } else {
-      absent += 1;
+function downloadDayReport(people: Person[], db: Database, day: string) {
+  const when = new Date(`${day}T12:00:00`);
+  const title = Number.isNaN(when.getTime())
+    ? day
+    : when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const rows = people.map((person) => {
+    const record = db.attendance.find((item) => item.userId === person.userId && item.date === day);
+    const status = attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+    return {
+      name: person.name,
+      userId: person.userId,
+      teams: personTeams(person).map((team) => teamName(team)).join(", ") || "No team",
+      checkIn: record ? formatClock(record.checkIn) : "—",
+      checkOut: record?.checkOut ? formatClock(record.checkOut) : "—",
+      status: dayStatusLabel(status, "Absent"),
+    };
+  });
+  const counts = rows.reduce(
+    (tally, row) => {
+      tally[row.status] = (tally[row.status] ?? 0) + 1;
+      return tally;
+    },
+    {} as Record<string, number>
+  );
+  const summary = ["On time", "Late", "Absentee", "Leave", "Absent"]
+    .map((label) => `${label}: ${counts[label] ?? 0}`)
+    .join(" · ");
+  const body = rows
+    .map(
+      (row) => `<tr>
+        <td>${escapeHtml(row.name)}</td>
+        <td>${escapeHtml(row.userId)}</td>
+        <td>${escapeHtml(row.teams)}</td>
+        <td>${escapeHtml(row.checkIn)}</td>
+        <td>${escapeHtml(row.checkOut)}</td>
+        <td>${escapeHtml(row.status)}</td>
+      </tr>`
+    )
+    .join("");
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>PSS attendance · ${escapeHtml(day)}</title>
+  <style>
+    body { margin: 32px; color: #1c1916; font-family: Georgia, "Times New Roman", serif; }
+    header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
+    h1 { margin: 0; font-size: 28px; }
+    p { margin: 6px 0 0; color: #5c534b; }
+    button { border: 1px solid #1f6b4a; background: #1f6b4a; color: #fff; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
+    table { width: 100%; border-collapse: collapse; margin-top: 24px; }
+    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e4d9c8; }
+    th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6d645b; }
+    @media print {
+      body { margin: 12px; }
+      button { display: none; }
     }
-  }
-  return { total: present + absent + leaves, present, absent, leaves, late };
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>PSS Attendance</h1>
+      <p>${escapeHtml(title)}</p>
+      <p>${escapeHtml(summary)}</p>
+    </div>
+    <button type="button" onclick="window.print()">Print</button>
+  </header>
+  <table>
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>User ID</th>
+        <th>Teams</th>
+        <th>Check in</th>
+        <th>Check out</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      ${body || "<tr><td colspan=\"6\">No one to report.</td></tr>"}
+    </tbody>
+  </table>
+</body>
+</html>`;
+  const blob = new Blob([html], { type: "text/html;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `attendance-${day}.html`;
+  link.click();
+  URL.revokeObjectURL(url);
 }
 
 export function AttendanceList() {
   const db = useDatabase();
   const session = useSession();
   const hr = session?.role === "hr";
+  const editor = canEditAttendance(session);
+  const pss = Boolean(session && isHrPss(session));
+  const [reportDay, setReportDay] = useState(todayKey());
   const people = db.people
     .filter((person) => hr || person.role !== "hr")
     .sort((a, b) => a.name.localeCompare(b.name));
+  const reportPeople = people.filter((person) => person.role !== "hr");
 
   return (
     <section className="manage">
@@ -62,9 +132,30 @@ export function AttendanceList() {
         <div>
           <h1>Attendance report</h1>
           <p className="muted">
-            {hr ? "Open a person to correct check-in and check-out times." : "Open a person to see every check-in and check-out."}
+            {editor
+              ? "Open a person to correct check-in and check-out times. A fourth late day in a row counts as absent."
+              : pss
+                ? "View attendance only. A fourth late day in a row counts as absent. Download one day’s report as a printable HTML file."
+                : "Open a person to see every check-in and check-out. A fourth late day in a row counts as absent."}
           </p>
         </div>
+        {pss ? (
+          <form
+            className="row"
+            onSubmit={(event) => {
+              event.preventDefault();
+              downloadDayReport(reportPeople, db, reportDay);
+            }}
+          >
+            <label>
+              Report day
+              <input type="date" value={reportDay} onChange={(event) => setReportDay(event.target.value)} required />
+            </label>
+            <button className="btn" type="submit">
+              Download HTML
+            </button>
+          </form>
+        ) : null}
       </div>
       <div className="table-card">
         <table className="report-table">
@@ -112,20 +203,12 @@ export function AttendanceList() {
                   <td>{totals.absent}</td>
                   <td>{totals.leaves}</td>
                   <td>
-                    {today === "late" ? (
-                      <span className="badge late">Late</span>
-                    ) : today === "on_time" ? (
-                      <span className="badge">On time</span>
-                    ) : today === "leave" ? (
-                      <span className="badge leave">Leave</span>
-                    ) : (
-                      <span className="badge wait">Not in</span>
-                    )}
+                    <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Absent")}</span>
                   </td>
                   <td>{totals.late}</td>
                   <td>
                     <Link className="text-btn" to={`/attendance/${person.userId}`}>
-                      {hr ? "Edit report" : "View report"}
+                      {editor ? "Edit report" : "View report"}
                     </Link>
                   </td>
                 </tr>

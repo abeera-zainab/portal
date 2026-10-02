@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { AttendanceRecord, LeaveRequest } from "../types";
-import { deleteAttendance, formatClock, formatWorked, historyFor, isLateCheckIn, isOnLeave, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
+import { attendanceStatus, canEditAttendance, dayStatusClass, dayStatusLabel, deleteAttendance, formatClock, formatWorked, historyFor, isOnLeave, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
 import { AssignedTags, canViewPerson, PersonAdjust } from "./PersonDetail";
 
 const FULL_DAY = 8 * 60;
@@ -120,13 +120,16 @@ function AttendanceCalendar({
               ? Math.max(0, Math.round((Date.now() - new Date(record.checkIn).getTime()) / 60000))
               : undefined);
           const open = Boolean(record && !record.checkOut);
-          const late = Boolean(record && isLateCheckIn(new Date(record.checkIn), lateAllowed));
-          const tone = onLeave ? "leave" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
+          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const late = status === "late";
+          const absentee = status === "absentee";
+          const tone = onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
           const width = minutes === undefined ? 0 : Math.min(100, Math.round((minutes / FULL_DAY) * 100));
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
               {onLeave ? <span className="badge no">On leave</span> : null}
+              {absentee ? <span className="badge no">Absentee</span> : null}
               {!onLeave && minutes !== undefined ? (
                 <>
                   <span className={`calendar-hours ${tone}`}>{hoursLabel(minutes)}</span>
@@ -152,6 +155,7 @@ const timeValue = (iso?: string) => {
 };
 
 function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllowed: boolean }) {
+  const db = useDatabase();
   const history = historyFor(userId);
   const [drafts, setDrafts] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
   const [adding, setAdding] = useState({ date: "", checkIn: "", checkOut: "" });
@@ -235,7 +239,7 @@ function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllow
                 checkIn: timeValue(record.checkIn),
                 checkOut: timeValue(record.checkOut),
               };
-              const late = isLateCheckIn(new Date(record.checkIn), lateAllowed);
+              const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), lateAllowed);
               return (
                 <tr key={record.date}>
                   <td>{record.date}</td>
@@ -258,7 +262,7 @@ function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllow
                     />
                   </td>
                   <td>
-                    <span className={late ? "badge late" : "badge"}>{late ? "Late" : "On time"}</span>
+                    <span className={dayStatusClass(status)}>{dayStatusLabel(status)}</span>
                   </td>
                   <td>
                     <div className="row">
@@ -287,7 +291,13 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
   const db = useDatabase();
   const person = db.people.find((item) => item.userId === userId);
   const history = historyFor(userId);
-  const late = history.filter((record) => isLateCheckIn(new Date(record.checkIn), Boolean(person?.lateAllowed))).length;
+  const late = person
+    ? history.filter(
+        (record) =>
+          attendanceStatus(person.userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), Boolean(person.lateAllowed)) ===
+          "late"
+      ).length
+    : 0;
   const minutes = history.reduce((sum, record) => sum + (record.workedMinutes ?? 0), 0);
 
   if (!person) {
@@ -343,7 +353,7 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
         )}
       </div>
       {mine || session?.role === "hr" ? null : <PersonAdjust person={person} />}
-      {session?.role === "hr" && !mine ? <HrAttendanceEditor userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
+      {canEditAttendance(session) && !mine ? <HrAttendanceEditor userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
       <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} />
       <div className="stat-row">
         <div className="card stat">
@@ -376,19 +386,26 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
                 <td colSpan={5}>No attendance yet.</td>
               </tr>
             ) : (
-              history.map((record) => (
+              history.map((record) => {
+              const status = attendanceStatus(
+                person.userId,
+                db.attendance,
+                db.leave,
+                new Date(`${record.date}T12:00:00`),
+                Boolean(person.lateAllowed)
+              );
+              return (
                 <tr key={record.date}>
                   <td>{record.date}</td>
                   <td>
-                    <span className={isLateCheckIn(new Date(record.checkIn), Boolean(person.lateAllowed)) ? "badge late" : "badge"}>
-                      {isLateCheckIn(new Date(record.checkIn), Boolean(person.lateAllowed)) ? "Late" : "On time"}
-                    </span>
+                    <span className={dayStatusClass(status)}>{dayStatusLabel(status)}</span>
                   </td>
                   <td>{formatClock(record.checkIn)}</td>
                   <td>{formatClock(record.checkOut)}</td>
                   <td>{formatWorked(record.workedMinutes)}</td>
                 </tr>
-              ))
+                );
+              })
             )}
           </tbody>
         </table>

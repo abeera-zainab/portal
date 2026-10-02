@@ -6,6 +6,7 @@ import type { Person, TeamId } from "./types";
 import { monthTotals } from "./attendanceStats";
 import {
   attendanceStatus,
+  canSeeLate,
   isOnLeave,
   formatClock,
   personTeams,
@@ -108,6 +109,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
 
     return {
       present: today.onTime + today.late,
+      late: today.late,
       leave: today.leave,
       notIn: today.notIn,
       pending: reviewableLeave(lead, db.people, db.leave).filter((request) => request.status === "pending").length,
@@ -137,7 +139,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
     return members.filter((person) => {
       const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
       if (focus.kind === "present") return status === "on_time" || status === "late";
-      if (focus.kind === "not_in") return status === "not_in";
+      if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
       return status === focus.kind;
     });
   }, [db, focus, lead, members]);
@@ -177,7 +179,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
   return (
     <>
       <p className="muted">
-        {todayLabel}. People who report to you{teamLabel ? ` · ${teamLabel}` : ""}. Click a count or a chart to see who it includes.
+        {todayLabel}. People who report to you{teamLabel ? ` · ${teamLabel}` : ""}. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
       </p>
 
       <div className="dash-stats">
@@ -189,6 +191,16 @@ export function TeamDashboard({ lead }: { lead: Person }) {
           <span>Present</span>
           <strong className="tone-green">{stats.present}</strong>
         </button>
+        {canSeeLate(lead) ? (
+          <button
+            type="button"
+            className={focus?.kind === "late" ? "card stat dash-hit on" : "card stat dash-hit"}
+            onClick={() => openToday("late", "Late today")}
+          >
+            <span>Late</span>
+            <strong className="tone-amber">{stats.late}</strong>
+          </button>
+        ) : null}
         <button
           type="button"
           className={focus?.kind === "not_in" ? "card stat dash-hit on" : "card stat dash-hit"}
@@ -356,6 +368,8 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                           ? leaveSpan(person) || "On leave"
                           : status === "late"
                             ? "Late"
+                            : status === "absentee"
+                              ? "Absentee"
                             : status === "on_time"
                               ? "On time"
                               : "Absent";
