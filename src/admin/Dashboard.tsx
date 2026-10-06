@@ -20,7 +20,6 @@ import {
   TEAMS,
   attendanceStatus,
   isOnLeave,
-  isPersonActive,
   formatClock,
   personTeams,
   roleTags,
@@ -57,8 +56,8 @@ const noon = (date: Date) => {
   return copy;
 };
 
-const periodDays = (mode: "week" | "month") => {
-  const today = noon(new Date());
+const periodDays = (mode: "week" | "month", end = new Date()) => {
+  const today = noon(end);
   const start = new Date(today);
   if (mode === "week") {
     const weekday = start.getDay();
@@ -71,6 +70,14 @@ const periodDays = (mode: "week" | "month") => {
     days.push(noon(cursor));
   }
   return days;
+};
+
+const shiftKey = (day: string, delta: number) => {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + delta);
+  const next = todayKey(date);
+  const today = todayKey();
+  return next > today ? today : next;
 };
 
 const kindFromLabel = (label: string): Kind => {
@@ -88,9 +95,13 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
   const [range, setRange] = useState<"week" | "month">("week");
   const [focus, setFocus] = useState<Focus | null>(null);
   const [marking, setMarking] = useState(false);
+  const [day, setDay] = useState(todayKey());
+  const selected = useMemo(() => new Date(`${day}T12:00:00`), [day]);
+  const dayLabel = selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const isToday = day === todayKey();
 
   const staff = useMemo(
-    () => db.people.filter((person) => person.role !== "admin" && person.role !== "hr" && isPersonActive(person)),
+    () => db.people.filter((person) => person.role !== "admin" && person.role !== "hr"),
     [db.people]
   );
 
@@ -107,7 +118,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       return counts;
     };
 
-    const today = tally(new Date());
+    const today = tally(selected);
     const todayMix = [
       { name: "On time", value: today.onTime, color: GREEN, kind: "on_time" as Kind },
       { name: "Late", value: today.late, color: AMBER, kind: "late" as Kind },
@@ -119,7 +130,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       const members = staff.filter((person) => personTeams(person).includes(team.id));
       const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of members) {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
+        const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
@@ -128,7 +139,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       return { team: team.name, teamId: team.id, ...counts };
     });
 
-    const trend = periodDays(range).map((date) => {
+    const trend = periodDays(range, selected).map((date) => {
       const counts = tally(date);
       return {
         day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
@@ -148,7 +159,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       leave: today.leave,
       notIn: today.notIn,
       pending: db.leave.filter((request) => request.status === "pending").length,
-      teamTotal: staff.filter((person) => personTeams(person).length > 0).length,
+      teamTotal: staff.length,
       teams: TEAMS.map((team) => ({
         id: team.id,
         name: team.name,
@@ -158,7 +169,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       byTeam,
       trend,
     };
-  }, [db, range, staff]);
+  }, [db, day, range, selected, staff]);
 
   const open = (next: Focus) => {
     setFocus((current) =>
@@ -169,7 +180,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
   };
 
   const openToday = (kind: Kind, title: string, teamId?: TeamId) => {
-    open({ kind, title, teamId, when: new Date() });
+    open({ kind, title, teamId, when: selected });
   };
 
   const roster = useMemo(() => {
@@ -185,12 +196,12 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
     }
     return staff.filter((person) => {
       if (focus.teamId && !personTeams(person).includes(focus.teamId)) return false;
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
+      const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
       if (focus.kind === "present") return status === "on_time" || status === "late";
       if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
       return status === focus.kind;
     });
-  }, [db, focus, staff]);
+  }, [db, focus, selected, staff]);
 
   const grouped = useMemo(() => {
     if (focus?.kind === "members" && focus.teamId) {
@@ -205,12 +216,6 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
     }
     return [...groups.entries()].sort((left, right) => left[0].localeCompare(right[0]));
   }, [focus, roster]);
-
-  const todayLabel = new Date().toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-  });
 
   const leaveSpan = (person: Person) => {
     if (!focus) return "";
@@ -229,9 +234,21 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
           <h1>Dashboard</h1>
           {marking && !viewer ? null : (
             <p className="muted">
-              {todayLabel}. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
+              {dayLabel}. Every registered person is included. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
             </p>
           )}
+        </div>
+        <div className="filters">
+          <button type="button" className="btn secondary" onClick={() => setDay(shiftKey(day, -1))} aria-label="Previous day">
+            ←
+          </button>
+          <label>
+            Day
+            <input type="date" max={todayKey()} value={day} onChange={(event) => event.target.value && setDay(event.target.value)} />
+          </label>
+          <button type="button" className="btn secondary" disabled={isToday} onClick={() => setDay(shiftKey(day, 1))} aria-label="Next day">
+            →
+          </button>
         </div>
         {viewer ? null : (
           <div className="filters">
@@ -250,7 +267,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
         <button
           type="button"
           className={focus?.kind === "members" && !focus.teamId ? "card stat dash-hit on" : "card stat dash-hit"}
-          onClick={() => openToday("members", "All teams")}
+          onClick={() => openToday("members", "All registered")}
         >
           <span>Total</span>
           <strong>{stats.teamTotal}</strong>
@@ -258,9 +275,9 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
         <button
           type="button"
           className={focus?.kind === "late" ? "card stat dash-hit on" : "card stat dash-hit"}
-          onClick={() => openToday("late", "Late today")}
+          onClick={() => openToday("late", `Late · ${dayLabel}`)}
         >
-          <span>Late today</span>
+          <span>{isToday ? "Late today" : "Late"}</span>
           <strong className="tone-amber">{stats.late}</strong>
         </button>
         {stats.teams.map((team) => (
@@ -278,7 +295,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
 
       <div className="dash-charts">
         <article className="card">
-          <h2>Today</h2>
+          <h2>{isToday ? "Today" : dayLabel}</h2>
           <p className="muted">Click a slice to see those people.</p>
           <div className="chart-box">
             {stats.employees === 0 ? (
@@ -293,14 +310,14 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                     innerRadius={62}
                     outerRadius={92}
                     paddingAngle={3}
-                    onClick={(slice) => openToday(kindFromLabel(String(slice.name)), `${slice.name} today`)}
+                    onClick={(slice) => openToday(kindFromLabel(String(slice.name)), `${slice.name} · ${dayLabel}`)}
                   >
                     {stats.todayMix.map((slice) => (
                       <Cell key={slice.name} fill={slice.color} cursor="pointer" />
                     ))}
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Legend onClick={(item) => openToday(kindFromLabel(String(item.value)), `${item.value} today`)} />
+                  <Legend onClick={(item) => openToday(kindFromLabel(String(item.value)), `${item.value} · ${dayLabel}`)} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -379,9 +396,9 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                 </div>
                 <ul>
                   {people.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
+                    const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
                     const record = db.attendance.find(
-                      (item) => item.userId === person.userId && item.date === todayKey(focus.when)
+                      (item) => item.userId === person.userId && item.date === todayKey(selected)
                     );
                     const note =
                       focus.kind === "leave" || status === "leave"

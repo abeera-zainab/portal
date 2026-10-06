@@ -8,6 +8,7 @@ import {
   attendanceStatus,
   dayStatusClass,
   dayStatusLabel,
+  todayKey,
   canGrantLeave,
   grantLeave,
   isHrPss,
@@ -91,9 +92,21 @@ export function HrShell() {
   );
 }
 
+const shiftKey = (day: string, delta: number) => {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + delta);
+  const next = todayKey(date);
+  const today = todayKey();
+  return next > today ? today : next;
+};
+
 function HrTeams() {
   const db = useDatabase();
-  const staff = db.people.filter((person) => person.role !== "hr" && person.role !== "admin" && isPersonActive(person));
+  const [day, setDay] = useState(todayKey());
+  const isToday = day === todayKey();
+  const when = new Date(`${day}T12:00:00`);
+  const dayLabel = when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
+  const staff = db.people.filter((person) => person.role !== "hr" && person.role !== "admin");
 
   return (
     <section className="manage">
@@ -101,8 +114,20 @@ function HrTeams() {
         <div>
           <h1>Teams</h1>
           <p className="muted">
-            Today’s status for every team. Late is shown here. A fourth late day in a row counts as absent.
+            {dayLabel}. Every registered person on each team, including past days. Late is shown here. A fourth late day in a row counts as absent.
           </p>
+        </div>
+        <div className="filters">
+          <button type="button" className="btn secondary" onClick={() => setDay(shiftKey(day, -1))} aria-label="Previous day">
+            ←
+          </button>
+          <label>
+            Day
+            <input type="date" max={todayKey()} value={day} onChange={(event) => event.target.value && setDay(event.target.value > todayKey() ? todayKey() : event.target.value)} />
+          </label>
+          <button type="button" className="btn secondary" disabled={isToday} onClick={() => setDay(shiftKey(day, 1))} aria-label="Next day">
+            →
+          </button>
         </div>
       </div>
       {TEAMS.map((team) => {
@@ -117,7 +142,7 @@ function HrTeams() {
                 <tr>
                   <th>Person</th>
                   <th>User ID</th>
-                  <th>Today</th>
+                  <th>{isToday ? "Today" : dayLabel}</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,13 +152,10 @@ function HrTeams() {
                   </tr>
                 ) : (
                   members.map((person) => {
-                    const status = attendanceStatus(
-                      person.userId,
-                      db.attendance,
-                      db.leave,
-                      new Date(),
-                      Boolean(person.lateAllowed)
-                    );
+                    const beforeJoin = Boolean(person.joined && day < person.joined);
+                    const status = beforeJoin
+                      ? null
+                      : attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
                     return (
                       <tr key={person.userId}>
                         <td>
@@ -143,7 +165,11 @@ function HrTeams() {
                         </td>
                         <td>{person.userId}</td>
                         <td>
-                          <span className={dayStatusClass(status)}>{dayStatusLabel(status, "Absent")}</span>
+                          {beforeJoin || !status ? (
+                            <span className="badge wait">Not joined</span>
+                          ) : (
+                            <span className={dayStatusClass(status)}>{dayStatusLabel(status, "Absent")}</span>
+                          )}
                         </td>
                       </tr>
                     );

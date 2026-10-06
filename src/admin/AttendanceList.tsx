@@ -18,6 +18,14 @@ import {
 } from "../store";
 import { AssignedTags } from "./PersonDetail";
 
+const shiftKey = (day: string, delta: number) => {
+  const date = new Date(`${day}T12:00:00`);
+  date.setDate(date.getDate() + delta);
+  const next = todayKey(date);
+  const today = todayKey();
+  return next > today ? today : next;
+};
+
 const escapeHtml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
@@ -130,6 +138,12 @@ export function AttendanceList() {
   const editor = canEditAttendance(session);
   const pss = Boolean(session && isHrPss(session));
   const [reportDay, setReportDay] = useState(todayKey());
+  const isToday = reportDay === todayKey();
+  const dayLabel = new Date(`${reportDay}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
   const people = db.people
     .filter((person) => {
       if (pss) return person.role !== "hr" && person.role !== "admin";
@@ -146,29 +160,47 @@ export function AttendanceList() {
           <h1>Attendance report</h1>
           <p className="muted">
             {editor
-              ? "Open a person to correct check-in and check-out times. A fourth late day in a row counts as absent."
+              ? "Every registered person, including past days. Open a person to correct check-in and check-out times."
               : pss
-                ? "View attendance only. A fourth late day in a row counts as absent. Download one day’s report as a printable HTML file."
-                : "Open a person to see every check-in and check-out. A fourth late day in a row counts as absent."}
+                ? "Every registered person, including past days. View only. Download the selected day as a printable HTML file."
+                : "Every registered person, including past days. Open a person to see every check-in and check-out."}
           </p>
         </div>
-        {pss ? (
-          <form
-            className="row"
-            onSubmit={(event) => {
-              event.preventDefault();
-              downloadDayReport(reportPeople, db, reportDay);
-            }}
+        <form
+          className="row"
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (pss) downloadDayReport(reportPeople, db, reportDay);
+          }}
+        >
+          <button type="button" className="btn secondary" onClick={() => setReportDay(shiftKey(reportDay, -1))} aria-label="Previous day">
+            ←
+          </button>
+          <label>
+            Day
+            <input
+              type="date"
+              max={todayKey()}
+              value={reportDay}
+              onChange={(event) => event.target.value && setReportDay(event.target.value > todayKey() ? todayKey() : event.target.value)}
+              required
+            />
+          </label>
+          <button
+            type="button"
+            className="btn secondary"
+            disabled={isToday}
+            onClick={() => setReportDay(shiftKey(reportDay, 1))}
+            aria-label="Next day"
           >
-            <label>
-              Report day
-              <input type="date" value={reportDay} onChange={(event) => setReportDay(event.target.value)} required />
-            </label>
+            →
+          </button>
+          {pss ? (
             <button className="btn" type="submit">
               Download HTML
             </button>
-          </form>
-        ) : null}
+          ) : null}
+        </form>
       </div>
       <div className="table-card">
         <table className="report-table">
@@ -180,7 +212,9 @@ export function AttendanceList() {
               <th>Present</th>
               <th>Absent</th>
               <th>Total leaves</th>
-              <th>Today status</th>
+              <th>Check in</th>
+              <th>Check out</th>
+              <th>{isToday ? "Today" : dayLabel}</th>
               <th>Total late days</th>
               <th></th>
             </tr>
@@ -189,7 +223,12 @@ export function AttendanceList() {
             {people.map((person) => {
               const teams = personTeams(person);
               const totals = attendanceTotals(person, db.attendance, db.leave);
-              const today = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
+              const when = new Date(`${reportDay}T12:00:00`);
+              const beforeJoin = Boolean(person.joined && reportDay < person.joined);
+              const status = beforeJoin
+                ? null
+                : attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+              const record = db.attendance.find((item) => item.userId === person.userId && item.date === reportDay);
               return (
                 <tr key={person.userId}>
                   <td>
@@ -215,8 +254,14 @@ export function AttendanceList() {
                   <td>{totals.present}</td>
                   <td>{totals.absent}</td>
                   <td>{totals.leaves}</td>
+                  <td>{beforeJoin ? "—" : formatClock(record?.checkIn)}</td>
+                  <td>{beforeJoin ? "—" : formatClock(record?.checkOut)}</td>
                   <td>
-                    <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Absent")}</span>
+                    {beforeJoin ? (
+                      <span className="badge wait">Not joined</span>
+                    ) : (
+                      <span className={dayStatusClass(status!)}>{dayStatusLabel(status!, "Absent")}</span>
+                    )}
                   </td>
                   <td>{totals.late}</td>
                   <td>
