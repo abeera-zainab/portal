@@ -276,7 +276,7 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
           <thead>
             <tr>
               <th>Date</th>
-              <th>Status</th>
+              <th>Day</th>
               <th>Check in</th>
               <th>Check out</th>
               <th>Time tracked</th>
@@ -289,28 +289,16 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
               </tr>
             ) : (
               history.map((record) => {
-              const status = attendanceStatus(
-                person.userId,
-                db.attendance,
-                db.leave,
-                new Date(`${record.date}T12:00:00`),
-                Boolean(person.lateAllowed)
-              );
-              return (
-                <tr key={record.date}>
-                  <td>{record.date}</td>
-                  <td>
-                    {status === "weekend" ? (
-                      "—"
-                    ) : (
-                      <span className={dayStatusClass(status)}>{dayStatusLabel(status)}</span>
-                    )}
-                    <MarkPresentButton userId={person.userId} date={record.date} status={status} marked={record.markedPresent} />
-                  </td>
-                  <td>{formatClock(record.checkIn)}</td>
-                  <td>{formatClock(record.checkOut)}</td>
-                  <td>{formatWorked(record.workedMinutes)}</td>
-                </tr>
+                const when = new Date(`${record.date}T12:00:00`);
+                const dayName = Number.isNaN(when.getTime()) ? "—" : when.toLocaleDateString(undefined, { weekday: "long" });
+                return (
+                  <tr key={record.date}>
+                    <td>{record.date}</td>
+                    <td>{dayName}</td>
+                    <td>{formatClock(record.checkIn)}</td>
+                    <td>{formatClock(record.checkOut)}</td>
+                    <td>{formatWorked(record.workedMinutes)}</td>
+                  </tr>
                 );
               })
             )}

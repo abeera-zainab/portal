@@ -1,7 +1,8 @@
 import express from "express";
 import pg from "pg";
 import EmbeddedPostgres from "embedded-postgres";
-import { existsSync, mkdirSync, readFileSync } from "node:fs";
+import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -100,6 +101,12 @@ await pool.query(`
     reason TEXT NOT NULL,
     status TEXT NOT NULL,
     rejection_reason TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES people(user_id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL
   );
 `);
 
@@ -207,12 +214,56 @@ async function readState() {
   };
 }
 
+const TOKEN_TTL_SECONDS = 12 * 60 * 60;
+const secretPath = path.join(__dirname, "..", "data", "jwt-secret");
+
+const jwtSecret = () => {
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET;
+  if (existsSync(secretPath)) return readFileSync(secretPath, "utf8").trim();
+  const secret = randomBytes(32).toString("hex");
+  writeFileSync(secretPath, secret, { mode: 0o600 });
+  return secret;
+};
+
+const JWT_SECRET = jwtSecret();
+
+const signToken = (payload) => {
+  const header = Buffer.from(JSON.stringify({ alg: "HS256", typ: "JWT" })).toString("base64url");
+  const body = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const signature = createHmac("sha256", JWT_SECRET).update(`${header}.${body}`).digest("base64url");
+  return `${header}.${body}.${signature}`;
+};
+
+const readToken = (token) => {
+  const parts = String(token || "").split(".");
+  if (parts.length !== 3) return null;
+  const expected = createHmac("sha256", JWT_SECRET).update(`${parts[0]}.${parts[1]}`).digest("base64url");
+  const actual = Buffer.from(parts[2]);
+  const wanted = Buffer.from(expected);
+  if (actual.length !== wanted.length || !timingSafeEqual(actual, wanted)) return null;
+  try {
+    return JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+  } catch {
+    return null;
+  }
+};
+
+const bearerToken = (req) => {
+  const header = req.header("authorization") || "";
+  return header.startsWith("Bearer ") ? header.slice(7).trim() : "";
+};
+
 async function actor(req) {
-  const userId = req.header("x-user-id");
-  if (!userId) return null;
+  const payload = readToken(bearerToken(req));
+  if (!payload?.sub || !payload?.sid || !payload.exp || payload.exp * 1000 < Date.now()) return null;
+  const session = await pool.query(
+    `SELECT id FROM sessions WHERE id = $1 AND user_id = $2 AND expires_at > NOW()`,
+    [payload.sid, payload.sub]
+  );
+  if (!session.rows[0]) return null;
   const result = await pool.query(
     `SELECT user_id, username, role, team, teams, officer, mto FROM people WHERE user_id = $1 AND active = TRUE`,
-    [userId]
+    [payload.sub]
   );
   return result.rows[0] ?? null;
 }
@@ -250,6 +301,16 @@ const canReviewMember = (who, member) => {
 
 const app = express();
 app.use(express.json());
+app.use(async (req, res, next) => {
+  if (!req.path.startsWith("/api")) return next();
+  if (req.path === "/api/health" || req.path === "/api/login" || req.path === "/api/logout") return next();
+  const who = await actor(req);
+  if (!who) {
+    res.status(401).json({ error: "Your session has ended. Sign in again." });
+    return;
+  }
+  next();
+});
 
 app.get("/api/health", async (_req, res) => {
   res.json({ ok: true, database: "postgresql", port: PG_PORT });
@@ -278,7 +339,12 @@ app.post("/api/login", async (req, res) => {
     res.status(403).json({ error: "This account is inactive." });
     return;
   }
+  const sid = randomBytes(16).toString("hex");
+  const exp = Math.floor(Date.now() / 1000) + TOKEN_TTL_SECONDS;
+  await pool.query(`INSERT INTO sessions (id, user_id, expires_at) VALUES ($1, $2, to_timestamp($3))`, [sid, row.user_id, exp]);
+  const token = signToken({ sub: row.user_id, sid, exp });
   res.json({
+    token,
     userId: row.user_id,
     name: row.name,
     username: row.username,
@@ -289,6 +355,12 @@ app.post("/api/login", async (req, res) => {
     active: row.active,
     joined: row.joined || undefined,
   });
+});
+
+app.post("/api/logout", async (req, res) => {
+  const payload = readToken(bearerToken(req));
+  if (payload?.sid) await pool.query(`DELETE FROM sessions WHERE id = $1`, [payload.sid]);
+  res.json({ ok: true });
 });
 
 app.post("/api/attendance/check-in", async (req, res) => {
@@ -831,6 +903,10 @@ app.patch("/api/account", async (req, res) => {
       `UPDATE people SET email = COALESCE($2, email), password = COALESCE($3, password) WHERE user_id = $1`,
       [who.user_id, nextEmail, nextPassword]
     );
+    if (nextPassword !== null) {
+      const session = readToken(bearerToken(req));
+      await pool.query(`DELETE FROM sessions WHERE user_id = $1 AND id <> $2`, [who.user_id, session?.sid ?? ""]);
+    }
   } catch (error) {
     if (error && error.code === "23505") {
       res.status(400).json({ error: "That email is already in use." });

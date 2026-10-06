@@ -9,12 +9,14 @@ export const TEAMS: { id: TeamId; name: string }[] = [
 ];
 
 const SESSION_KEY = "pss-attendance-session";
+const TOKEN_KEY = "pss-attendance-token";
 
 const empty = (): Database => ({ people: [], attendance: [], leave: [] });
 
 let database: Database = empty();
 let sessionUserId: string | null = sessionStorage.getItem(SESSION_KEY);
-let ready = false;
+let token: string | null = sessionStorage.getItem(TOKEN_KEY);
+let ready = !token;
 let dbError: string | null = null;
 const listeners = new Set<() => void>();
 
@@ -25,9 +27,31 @@ const applyState = (state: Database) => {
   emit();
 };
 
+const authHeaders = (): Record<string, string> => (token ? { Authorization: `Bearer ${token}` } : {});
+
+const clearSession = () => {
+  sessionUserId = null;
+  token = null;
+  sessionStorage.removeItem(SESSION_KEY);
+  sessionStorage.removeItem(TOKEN_KEY);
+  database = empty();
+};
+
 export const refresh = async () => {
+  if (!token) {
+    ready = true;
+    emit();
+    return;
+  }
   try {
-    const response = await fetch("/api/state");
+    const response = await fetch("/api/state", { headers: authHeaders() });
+    if (response.status === 401) {
+      clearSession();
+      dbError = null;
+      ready = true;
+      emit();
+      return;
+    }
     if (!response.ok) throw new Error("Cannot reach the local PostgreSQL database.");
     applyState((await response.json()) as Database);
     dbError = null;
@@ -42,18 +66,23 @@ export const refresh = async () => {
   }
 };
 
-void refresh();
+if (token) void refresh();
 
 const mutate = async (path: string, method: string, body?: unknown) => {
   const response = await fetch(path, {
     method,
     headers: {
       "Content-Type": "application/json",
-      "X-User-Id": sessionUserId ?? "",
+      ...authHeaders(),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: Database };
+  if (response.status === 401) {
+    clearSession();
+    ready = true;
+    emit();
+  }
   if (!response.ok) throw new Error(payload.error || "Database request failed.");
   if (payload.state) applyState(payload.state);
   return payload;
@@ -287,17 +316,26 @@ export const login = async (identifier: string, password: string) => {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ identifier, password }),
   });
-  const payload = (await response.json().catch(() => ({}))) as Person & { error?: string };
-  if (!response.ok) throw new Error(payload.error || "Could not sign in.");
+  const payload = (await response.json().catch(() => ({}))) as Person & { error?: string; token?: string };
+  if (!response.ok || !payload.token) throw new Error(payload.error || "Could not sign in.");
   sessionUserId = payload.userId;
+  token = payload.token;
   sessionStorage.setItem(SESSION_KEY, payload.userId);
+  sessionStorage.setItem(TOKEN_KEY, payload.token);
   await refresh();
 };
 
-export const logout = () => {
-  sessionUserId = null;
-  sessionStorage.removeItem(SESSION_KEY);
+export const logout = async () => {
+  const current = token;
+  clearSession();
+  ready = true;
+  dbError = null;
   emit();
+  if (!current) return;
+  await fetch("/api/logout", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${current}` },
+  }).catch(() => undefined);
 };
 
 export const todayRecord = (userId: string) =>
