@@ -12,9 +12,7 @@ import {
   isHrPss,
   isWeekend,
   markPresent,
-  personTeams,
   roleTags,
-  teamName,
   todayKey,
   useDatabase,
   useSession,
@@ -81,44 +79,53 @@ function StatusEdit({
 const escapeHtml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 
+const statusTone = (status: DayStatus | null) => {
+  if (status === "on_time") return "present";
+  if (status === "late") return "late";
+  if (status === "leave") return "leave";
+  if (status === "absentee" || status === "not_in") return "absent";
+  return "plain";
+};
+
 function downloadDayReport(people: Person[], db: Database, day: string) {
   const when = new Date(`${day}T12:00:00`);
   const title = Number.isNaN(when.getTime())
     ? day
     : when.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const rows = people.map((person) => {
+    const beforeJoin = Boolean(person.joined && day < person.joined);
     const record = db.attendance.find((item) => item.userId === person.userId && item.date === day);
-    const status = attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+    const checkIn = beforeJoin || !record?.checkIn ? "—" : formatClock(record.checkIn);
+    const checkOut = beforeJoin || !record?.checkOut ? "—" : formatClock(record.checkOut);
+    const label = beforeJoin ? "Not joined" : !status || status === "weekend" ? "—" : reportStatusLabel(status);
     return {
       name: person.name,
-      userId: person.userId,
-      teams: personTeams(person).map((team) => teamName(team)).join(", ") || "No team",
       roles: roleTags(person),
-      checkIn: record ? formatClock(record.checkIn) : "—",
-      checkOut: record?.checkOut ? formatClock(record.checkOut) : "—",
-      status: status === "weekend" ? "—" : dayStatusLabel(status, "Absent"),
+      checkIn,
+      checkOut,
+      label,
+      tone: beforeJoin ? "plain" : statusTone(status),
     };
   });
   const counts = rows.reduce(
     (tally, row) => {
-      tally[row.status] = (tally[row.status] ?? 0) + 1;
+      tally[row.label] = (tally[row.label] ?? 0) + 1;
       return tally;
     },
     {} as Record<string, number>
   );
-  const summary = ["On time", "Late", "Absentee", "Leave", "Absent"]
+  const summary = ["Present", "Late", "Absentee", "Leave", "Absent"]
     .map((label) => `${label}: ${counts[label] ?? 0}`)
     .join(" · ");
   const body = rows
     .map(
       (row) => `<tr>
-        <td>${escapeHtml(row.name)}</td>
-        <td>${escapeHtml(row.userId)}</td>
+        <td class="name">${escapeHtml(row.name)}</td>
         <td class="tags">${row.roles.map((tag) => `<span class="tag ${escapeHtml(tag.id)}">${escapeHtml(tag.label)}</span>`).join("")}</td>
-        <td>${escapeHtml(row.teams)}</td>
-        <td>${escapeHtml(row.checkIn)}</td>
-        <td>${escapeHtml(row.checkOut)}</td>
-        <td>${escapeHtml(row.status)}</td>
+        <td class="${row.checkIn === "—" ? "time-in empty" : "time-in"}">${escapeHtml(row.checkIn)}</td>
+        <td class="${row.checkOut === "—" ? "time-out empty" : "time-out"}">${escapeHtml(row.checkOut)}</td>
+        <td><span class="status ${row.tone}">${escapeHtml(row.label)}</span></td>
       </tr>`
     )
     .join("");
@@ -128,14 +135,25 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
   <meta charset="utf-8">
   <title>PSS attendance · ${escapeHtml(day)}</title>
   <style>
-    body { margin: 32px; color: #1c1916; font-family: Georgia, "Times New Roman", serif; }
+    html, body { margin: 0; background: #fffdf8; color: #1c1916; color-scheme: light; }
+    body { margin: 32px; font-family: Georgia, "Times New Roman", serif; }
     header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; }
     h1 { margin: 0; font-size: 28px; }
     p { margin: 6px 0 0; color: #5c534b; }
     button { border: 1px solid #1f6b4a; background: #1f6b4a; color: #fff; border-radius: 8px; padding: 8px 14px; font: inherit; cursor: pointer; }
     table { width: 100%; border-collapse: collapse; margin-top: 24px; }
-    th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid #e4d9c8; }
+    th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid #e4d9c8; vertical-align: middle; }
     th { font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: #6d645b; }
+    .name { font-weight: 700; }
+    .time-in { color: #1f6b4a; font-weight: 700; }
+    .time-out { color: #1d4e89; font-weight: 700; }
+    .time-in.empty, .time-out.empty { color: #8a8178; font-weight: 500; }
+    .status { display: inline-block; border-radius: 999px; padding: 4px 12px; font-weight: 700; font-size: 13px; }
+    .status.present { background: #e7f4ec; color: #1f6b4a; }
+    .status.late { background: #fff1dc; color: #9a5b12; }
+    .status.leave { background: #e7eef8; color: #1d4e89; }
+    .status.absent { background: #fde8ee; color: #9f1239; }
+    .status.plain { background: #eeeae3; color: #5c534b; }
     .tags { display: flex; flex-wrap: wrap; gap: 4px; }
     .tag { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #f3ecdf; color: #4a4036; }
     .tag.officer { background: #f4e7cf; color: #9a5b12; }
@@ -144,6 +162,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     @media print {
       body { margin: 12px; }
       button { display: none; }
+      * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
     }
   </style>
 </head>
@@ -160,16 +179,14 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     <thead>
       <tr>
         <th>Name</th>
-        <th>User ID</th>
         <th>Role</th>
-        <th>Teams</th>
         <th>Check in</th>
         <th>Check out</th>
         <th>Status</th>
       </tr>
     </thead>
     <tbody>
-      ${body || "<tr><td colspan=\"7\">No one to report.</td></tr>"}
+      ${body || "<tr><td colspan=\"5\">No one to report.</td></tr>"}
     </tbody>
   </table>
 </body>
