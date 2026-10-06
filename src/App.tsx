@@ -385,7 +385,7 @@ function TeamTools({ lead }: { lead: Person }) {
                     <td>{member.userId}</td>
                     <td>{roleLabel(member)}</td>
                     <td>
-                      <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>
+                      {today === "weekend" ? "—" : <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>}
                     </td>
                   </tr>
                 );

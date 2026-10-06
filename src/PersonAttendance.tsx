@@ -10,7 +10,6 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
-const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -45,13 +44,13 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
   const db = useDatabase();
   const [range, setRange] = useState<"week" | "month">("month");
   const totals = attendanceTotals(person, db.attendance, db.leave);
+  const recorded = totals.present + totals.absent + totals.leaves;
   const onTime = Math.max(0, totals.present - totals.late);
   const history = db.attendance.filter((record) => record.userId === person.userId);
   const mix = [
     { name: "On time", value: onTime, color: GREEN },
     { name: "Late", value: totals.late, color: AMBER },
     { name: "On leave", value: totals.leaves, color: LEAVE },
-    { name: "Weekend", value: totals.weekend, color: HOLIDAY },
     { name: "Absent", value: totals.absent, color: MUTED },
   ];
   const trend = periodDays(range).map((date) => {
@@ -64,7 +63,6 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
       late: status === "late" ? 1 : 0,
       present: status === "on_time" || status === "late" ? 1 : 0,
       leave: status === "leave" ? 1 : 0,
-      weekend: status === "weekend" ? 1 : 0,
       absent: status === "not_in" || status === "absentee" ? 1 : 0,
     };
   });
@@ -80,7 +78,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
       <div className="dash-stats">
         <article className="card stat">
           <span>Total days</span>
-          <strong>{totals.total}</strong>
+          <strong>{recorded}</strong>
         </article>
         <article className="card stat">
           <span>Present</span>
@@ -89,10 +87,6 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
         <article className="card stat">
           <span>Absent</span>
           <strong>{totals.absent}</strong>
-        </article>
-        <article className="card stat">
-          <span>Holiday</span>
-          <strong>{totals.weekend}</strong>
         </article>
         <article className="card stat">
           <span>On leave</span>
@@ -108,7 +102,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
           <h2>All days</h2>
           <p className="muted">Present, late, leave, and absent across their whole record.</p>
           <div className="chart-box">
-            {totals.total === 0 ? (
+            {recorded === 0 ? (
               <p className="muted chart-empty">No attendance yet.</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">

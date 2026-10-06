@@ -333,7 +333,11 @@ function UserRow({
       </td>
       <td>
         {person.role !== "admin" ? (
-          <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>
+          today === "weekend" ? (
+            "—"
+          ) : (
+            <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>
+          )
         ) : (
           <span className={active ? "status on" : "status off"}>{active ? "Active" : "Inactive"}</span>
         )}

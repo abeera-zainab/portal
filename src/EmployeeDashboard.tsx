@@ -9,7 +9,6 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
-const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -49,7 +48,7 @@ const statusLabel = (status: string) => {
   if (status === "late") return "Late";
   if (status === "absentee") return "Absentee";
   if (status === "leave") return "On leave";
-  if (status === "weekend") return "Weekend";
+  if (status === "weekend") return "—";
   return "Not in";
 };
 
@@ -67,7 +66,6 @@ export function EmployeeDashboard({ person }: { person: Person }) {
     { name: "On time", value: month.present - month.late, color: GREEN },
     { name: "Late", value: month.late, color: AMBER },
     { name: "On leave", value: month.leaves, color: LEAVE },
-    { name: "Weekend", value: month.weekend, color: HOLIDAY },
     { name: "Absent", value: month.absent, color: MUTED },
   ];
 
@@ -81,7 +79,6 @@ export function EmployeeDashboard({ person }: { person: Person }) {
           late: status === "late" ? 1 : 0,
           present: status === "on_time" || status === "late" ? 1 : 0,
           leave: status === "leave" ? 1 : 0,
-          weekend: status === "weekend" ? 1 : 0,
           absent: status === "not_in" || status === "absentee" ? 1 : 0,
         };
       }),
@@ -108,10 +105,6 @@ export function EmployeeDashboard({ person }: { person: Person }) {
         <article className="card stat">
           <span>Absent</span>
           <strong>{month.absent}</strong>
-        </article>
-        <article className="card stat">
-          <span>Holiday</span>
-          <strong>{month.weekend}</strong>
         </article>
         <article className="card stat">
           <span>On leave</span>
@@ -153,7 +146,7 @@ export function EmployeeDashboard({ person }: { person: Person }) {
             {today.toLocaleDateString(undefined, { month: "long", year: "numeric" })}. On time, late, leave, and absent days.
           </p>
           <div className="chart-box">
-            {month.total === 0 ? (
+            {month.present + month.absent + month.leaves === 0 ? (
               <p className="muted chart-empty">No days in this month yet.</p>
             ) : (
               <ResponsiveContainer width="100%" height="100%">

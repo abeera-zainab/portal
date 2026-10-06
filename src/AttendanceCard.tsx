@@ -44,7 +44,7 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
       <h2>{heading}</h2>
       <p className="muted">
         {weekend
-          ? "Saturday and Sunday are a weekend holiday."
+          ? "Check-in is closed today."
           : onLeave
           ? "You are on approved leave today."
           : person.lateAllowed
@@ -63,7 +63,6 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
         {status === "on_time" ? <span className="badge">On time</span> : null}
         {status === "leave" ? <span className="badge leave">Leave</span> : null}
         {status === "not_in" ? <span className="badge wait">Not in</span> : null}
-        {status === "weekend" ? <span className="badge holiday">Weekend</span> : null}
         {status === "absentee" ? <span className="badge no">Absentee</span> : null}
         {record ? (
           <span className="muted"> · In {formatClock(record.checkIn)} · Out {formatClock(record.checkOut)}</span>

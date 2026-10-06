@@ -251,7 +251,7 @@ export const dayStatusLabel = (status: DayStatus, absentLabel = "Not in") => {
   if (status === "late") return "Late";
   if (status === "leave") return "Leave";
   if (status === "absentee") return "Absentee";
-  if (status === "weekend") return "Weekend";
+  if (status === "weekend") return "—";
   return absentLabel;
 };
 
@@ -260,7 +260,7 @@ export const dayStatusClass = (status: DayStatus) => {
   if (status === "absentee") return "badge no";
   if (status === "leave") return "badge leave";
   if (status === "on_time") return "badge";
-  if (status === "weekend") return "badge holiday";
+  if (status === "weekend") return "badge wait";
   return "badge wait";
 };
 

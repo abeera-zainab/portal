@@ -12,7 +12,6 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
-const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -25,7 +24,6 @@ export const ATTENDANCE_BARS: PeriodBar[] = [
   { key: "onTime", name: "On time", color: GREEN },
   { key: "late", name: "Late", color: AMBER },
   { key: "leave", name: "On leave", color: LEAVE },
-  { key: "weekend", name: "Weekend", color: HOLIDAY },
   { key: "absent", name: "Absent", color: MUTED },
 ];
 

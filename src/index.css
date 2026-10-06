@@ -188,13 +188,32 @@ button { cursor: pointer; }
 .table-card.month-wrap table { min-width: 640px; }
 .month-table th:nth-child(n + 2),
 .month-table td:nth-child(n + 2) { text-align: center; }
-.report-table { min-width: 1180px; font-size: 16px; }
+.table-card table.report-table { min-width: 760px; }
+.report-table { font-size: 16px; }
 .report-table th { font-size: 13px; }
 .report-table .badge { font-size: 14px; padding: 5px 12px; }
-.report-table td:nth-child(n + 3):nth-child(-n + 6),
-.report-table td:nth-child(8),
-.report-table th:nth-child(n + 3):nth-child(-n + 6),
-.report-table th:nth-child(8) { text-align: center; }
+.report-table th:nth-child(n + 2),
+.report-table td:nth-child(n + 2) { text-align: center; }
+.report-table td:first-child,
+.report-table th:first-child { text-align: left; }
+.report-table .tone-green,
+.report-table .tone-amber,
+.report-table .tone-absent { font-weight: 700; }
+.status-cell { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.icon-btn {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  border: 1px solid #d9cdb8;
+  border-radius: 8px;
+  background: #fff;
+  color: #5c534b;
+}
+.icon-btn svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.icon-btn:hover { border-color: var(--green); color: var(--green); }
+.tone-absent { color: var(--red); }
 .user-cell { display: flex; align-items: center; gap: 10px; }
 .badge.remote { background: #e7eef8; color: #1d4e89; }
 .avatar {

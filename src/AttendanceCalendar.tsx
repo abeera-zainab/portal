@@ -127,7 +127,6 @@ export function AttendanceCalendar({
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
-              {weekend ? <span className="badge holiday">Weekend</span> : null}
               {!weekend && onLeave ? <span className="badge leave">Leave</span> : null}
               {absentee ? <span className="badge no">Absentee</span> : null}
               {!weekend && !onLeave && minutes !== undefined ? (

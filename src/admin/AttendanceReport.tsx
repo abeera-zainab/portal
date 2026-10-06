@@ -130,7 +130,6 @@ function AttendanceCalendar({
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
-              {weekend ? <span className="badge holiday">Weekend</span> : null}
               {!weekend && onLeave ? <span className="badge leave">Leave</span> : null}
               {absentee ? <span className="badge no">Absentee</span> : null}
               {!weekend && !onLeave && minutes !== undefined ? (
@@ -165,7 +164,7 @@ function PresentDay({ userId, lateAllowed }: { userId: string; lateAllowed: bool
   return (
     <section className="card">
       <h2>Set a day to present</h2>
-      <p className="muted">Change an absent, late, or leave day to present. Saturday and Sunday stay a weekend holiday.</p>
+      <p className="muted">Change an absent, late, or leave day to present.</p>
       <div className="row" style={{ marginTop: 12, alignItems: "end" }}>
         <label>
           Day
@@ -423,7 +422,11 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
                 <tr key={record.date}>
                   <td>{record.date}</td>
                   <td>
-                    <span className={dayStatusClass(status)}>{dayStatusLabel(status)}</span>
+                    {status === "weekend" ? (
+                      "—"
+                    ) : (
+                      <span className={dayStatusClass(status)}>{dayStatusLabel(status)}</span>
+                    )}
                     <MarkPresentButton userId={person.userId} date={record.date} status={status} marked={record.markedPresent} />
                   </td>
                   <td>{formatClock(record.checkIn)}</td>

@@ -2,13 +2,16 @@ import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { Database, Person } from "../types";
 import { attendanceTotals } from "../attendanceStats";
+import type { DayStatus } from "../store";
 import {
   attendanceStatus,
-  canEditAttendance,
+  canMarkPresent,
   dayStatusClass,
   dayStatusLabel,
   formatClock,
   isHrPss,
+  isWeekend,
+  markPresent,
   personTeams,
   roleTags,
   teamName,
@@ -16,8 +19,6 @@ import {
   useDatabase,
   useSession,
 } from "../store";
-import { MarkPresentButton } from "../MarkPresent";
-import { AssignedTags } from "./PersonDetail";
 
 const shiftKey = (day: string, delta: number) => {
   const date = new Date(`${day}T12:00:00`);
@@ -26,6 +27,56 @@ const shiftKey = (day: string, delta: number) => {
   const today = todayKey();
   return next > today ? today : next;
 };
+
+const reportStatusLabel = (status: DayStatus) => {
+  if (status === "weekend") return "";
+  if (status === "on_time") return "Present";
+  if (status === "not_in") return "Absent";
+  return dayStatusLabel(status, "Absent");
+};
+
+function StatusEdit({
+  userId,
+  date,
+  status,
+  marked = false,
+}: {
+  userId: string;
+  date: string;
+  status: DayStatus | null;
+  marked?: boolean;
+}) {
+  const session = useSession();
+  const [error, setError] = useState("");
+  if (!session || !canMarkPresent(session) || !date || date > todayKey() || isWeekend(date)) return null;
+  const editable = status === "not_in" || status === "late" || status === "leave" || status === "absentee";
+  if (!editable && !marked) return null;
+
+  const run = async () => {
+    try {
+      setError("");
+      await markPresent(userId, date, !marked);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not update this status.");
+    }
+  };
+
+  return (
+    <button type="button" className="icon-btn" onClick={() => void run()} aria-label={marked ? "Undo present" : "Set present"} title={error || (marked ? "Undo present" : "Set present")}>
+      {marked ? (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M8 7H4v4" />
+          <path d="M4 11a8 8 0 1 0 2.3-5.7L4 7" />
+        </svg>
+      ) : (
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M4 20h4l10.5-10.5a2.1 2.1 0 0 0-3-3L5 17v3z" />
+          <path d="M13.5 6.5l3 3" />
+        </svg>
+      )}
+    </button>
+  );
+}
 
 const escapeHtml = (value: string) =>
   value.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
@@ -45,7 +96,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
       roles: roleTags(person),
       checkIn: record ? formatClock(record.checkIn) : "—",
       checkOut: record?.checkOut ? formatClock(record.checkOut) : "—",
-      status: dayStatusLabel(status, "Absent"),
+      status: status === "weekend" ? "—" : dayStatusLabel(status, "Absent"),
     };
   });
   const counts = rows.reduce(
@@ -55,7 +106,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     },
     {} as Record<string, number>
   );
-  const summary = ["On time", "Late", "Absentee", "Leave", "Weekend", "Absent"]
+  const summary = ["On time", "Late", "Absentee", "Leave", "Absent"]
     .map((label) => `${label}: ${counts[label] ?? 0}`)
     .join(" · ");
   const body = rows
@@ -136,15 +187,9 @@ export function AttendanceList() {
   const db = useDatabase();
   const session = useSession();
   const hr = session?.role === "hr";
-  const editor = canEditAttendance(session);
   const pss = Boolean(session && isHrPss(session));
   const [reportDay, setReportDay] = useState(todayKey());
   const isToday = reportDay === todayKey();
-  const dayLabel = new Date(`${reportDay}T12:00:00`).toLocaleDateString(undefined, {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-  });
   const people = db.people
     .filter((person) => {
       if (pss) return person.role !== "hr" && person.role !== "admin";
@@ -159,13 +204,7 @@ export function AttendanceList() {
       <div className="manage-head">
         <div>
           <h1>Attendance report</h1>
-          <p className="muted">
-            {editor
-              ? "Every registered person, including past days. Open a person to correct check-in and check-out times."
-              : pss
-                ? "Every registered person, including past days. View only. Download the selected day as a printable HTML file."
-                : "Every registered person, including past days. Open a person to see every check-in and check-out."}
-          </p>
+          <p className="muted">Check-in, check-out, and status for the selected day.</p>
         </div>
         <form
           className="row"
@@ -208,22 +247,16 @@ export function AttendanceList() {
           <thead>
             <tr>
               <th>User</th>
-              <th>Teams</th>
-              <th>Total days</th>
-              <th>Present</th>
-              <th>Absent</th>
-              <th>Holiday</th>
-              <th>Total leaves</th>
               <th>Check in</th>
               <th>Check out</th>
-              <th>{isToday ? "Today" : dayLabel}</th>
-              <th>Total late days</th>
-              <th></th>
+              <th>Status</th>
+              <th>Present</th>
+              <th>Absent</th>
+              <th>Late</th>
             </tr>
           </thead>
           <tbody>
             {people.map((person) => {
-              const teams = personTeams(person);
               const totals = attendanceTotals(person, db.attendance, db.leave);
               const when = new Date(`${reportDay}T12:00:00`);
               const beforeJoin = Boolean(person.joined && reportDay < person.joined);
@@ -234,47 +267,27 @@ export function AttendanceList() {
               return (
                 <tr key={person.userId}>
                   <td>
-                    <Link className="name-btn" to={hr ? `/attendance/${person.userId}` : `/users/${person.userId}`}>
+                    <Link className="name-btn" to={`/attendance/${person.userId}`}>
                       {person.name}
                     </Link>
-                    <AssignedTags person={person} />
                   </td>
-                  <td>
-                    {teams.length ? (
-                      <div className="domain-list">
-                        {teams.map((team) => (
-                          <span key={team} className="badge team">
-                            {teamName(team)}
-                          </span>
-                        ))}
-                      </div>
-                    ) : (
-                      "—"
-                    )}
-                  </td>
-                  <td>{totals.total}</td>
-                  <td>{totals.present}</td>
-                  <td>{totals.absent}</td>
-                  <td>{totals.weekend}</td>
-                  <td>{totals.leaves}</td>
                   <td>{beforeJoin ? "—" : formatClock(record?.checkIn)}</td>
                   <td>{beforeJoin ? "—" : formatClock(record?.checkOut)}</td>
                   <td>
-                    {beforeJoin ? (
-                      <span className="badge wait">Not joined</span>
-                    ) : (
-                      <span className={dayStatusClass(status!)}>{dayStatusLabel(status!, "Absent")}</span>
-                    )}
-                    {beforeJoin ? null : (
-                      <MarkPresentButton userId={person.userId} date={reportDay} status={status} marked={record?.markedPresent} />
-                    )}
+                    <div className="status-cell">
+                      {beforeJoin || status === "weekend" ? (
+                        <span className="muted">{beforeJoin ? "Not joined" : "—"}</span>
+                      ) : (
+                        <span className={dayStatusClass(status!)}>{reportStatusLabel(status!)}</span>
+                      )}
+                      {beforeJoin ? null : (
+                        <StatusEdit userId={person.userId} date={reportDay} status={status} marked={record?.markedPresent} />
+                      )}
+                    </div>
                   </td>
-                  <td>{totals.late}</td>
-                  <td>
-                    <Link className="text-btn" to={`/attendance/${person.userId}`}>
-                      {editor ? "Edit report" : "View report"}
-                    </Link>
-                  </td>
+                  <td className="tone-green">{totals.present}</td>
+                  <td className="tone-absent">{totals.absent}</td>
+                  <td className="tone-amber">{totals.late}</td>
                 </tr>
               );
             })}

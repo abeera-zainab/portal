@@ -34,7 +34,6 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
-const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -43,7 +42,7 @@ const tooltipStyle = {
   fontSize: 13,
 };
 
-type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending" | "members" | "weekend";
+type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending" | "members";
 
 type Focus = {
   title: string;
@@ -74,20 +73,11 @@ const periodDays = (mode: "week" | "month", end = new Date()) => {
   return days;
 };
 
-const shiftKey = (day: string, delta: number) => {
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + delta);
-  const next = todayKey(date);
-  const today = todayKey();
-  return next > today ? today : next;
-};
-
 const kindFromLabel = (label: string): Kind => {
   if (label === "On time") return "on_time";
   if (label === "Late") return "late";
   if (label === "On leave" || label === "Leave") return "leave";
   if (label === "Present") return "present";
-  if (label === "Weekend") return "weekend";
   return "not_in";
 };
 
@@ -98,10 +88,6 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
   const [range, setRange] = useState<"week" | "month">("week");
   const [focus, setFocus] = useState<Focus | null>(null);
   const [marking, setMarking] = useState(false);
-  const [day, setDay] = useState(todayKey());
-  const selected = useMemo(() => new Date(`${day}T12:00:00`), [day]);
-  const dayLabel = selected.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
-  const isToday = day === todayKey();
 
   const staff = useMemo(
     () => db.people.filter((person) => person.role !== "admin" && person.role !== "hr"),
@@ -110,50 +96,47 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
 
   const stats = useMemo(() => {
     const tally = (date: Date) => {
-      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0, weekend: 0 };
+      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of staff) {
         const status = attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
+        if (status === "weekend") continue;
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
-        else if (status === "weekend") counts.weekend += 1;
         else counts.notIn += 1;
       }
       return counts;
     };
 
-    const today = tally(selected);
+    const today = tally(new Date());
     const todayMix = [
       { name: "On time", value: today.onTime, color: GREEN, kind: "on_time" as Kind },
       { name: "Late", value: today.late, color: AMBER, kind: "late" as Kind },
       { name: "On leave", value: today.leave, color: LEAVE, kind: "leave" as Kind },
-      { name: "Weekend", value: today.weekend, color: HOLIDAY, kind: "weekend" as Kind },
       { name: "Absent", value: today.notIn, color: MUTED, kind: "not_in" as Kind },
     ];
 
     const byTeam = TEAMS.map((team) => {
       const members = staff.filter((person) => personTeams(person).includes(team.id));
-      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0, weekend: 0 };
+      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of members) {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
+        const status = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
+        if (status === "weekend") continue;
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
-        else if (status === "weekend") counts.weekend += 1;
         else counts.notIn += 1;
       }
       return { team: team.name, teamId: team.id, ...counts };
     });
 
-    const trend = periodDays(range, selected).map((date) => {
+    const trend = periodDays(range).map((date) => {
       const counts = tally(date);
       return {
         day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
-        when: date.getTime(),
         onTime: counts.onTime,
         late: counts.late,
         leave: counts.leave,
-        weekend: counts.weekend,
         absent: counts.notIn,
         present: counts.onTime + counts.late,
       };
@@ -176,7 +159,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       byTeam,
       trend,
     };
-  }, [db, day, range, selected, staff]);
+  }, [db, range, staff]);
 
   const open = (next: Focus) => {
     setFocus((current) =>
@@ -187,7 +170,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
   };
 
   const openToday = (kind: Kind, title: string, teamId?: TeamId) => {
-    open({ kind, title, teamId, when: selected });
+    open({ kind, title, teamId, when: new Date() });
   };
 
   const roster = useMemo(() => {
@@ -203,12 +186,12 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
     }
     return staff.filter((person) => {
       if (focus.teamId && !personTeams(person).includes(focus.teamId)) return false;
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
+      const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
       if (focus.kind === "present") return status === "on_time" || status === "late";
       if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
       return status === focus.kind;
     });
-  }, [db, focus, selected, staff]);
+  }, [db, focus, staff]);
 
   const grouped = useMemo(() => {
     if (focus?.kind === "members" && focus.teamId) {
@@ -241,21 +224,9 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
           <h1>Dashboard</h1>
           {marking && !viewer ? null : (
             <p className="muted">
-              {dayLabel}. Every registered person is included. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
+              Every registered person is included. Click a count to see who it includes. A fourth late day in a row counts as absent.
             </p>
           )}
-        </div>
-        <div className="filters">
-          <button type="button" className="btn secondary" onClick={() => setDay(shiftKey(day, -1))} aria-label="Previous day">
-            ←
-          </button>
-          <label>
-            Day
-            <input type="date" max={todayKey()} value={day} onChange={(event) => event.target.value && setDay(event.target.value)} />
-          </label>
-          <button type="button" className="btn secondary" disabled={isToday} onClick={() => setDay(shiftKey(day, 1))} aria-label="Next day">
-            →
-          </button>
         </div>
         {viewer ? null : (
           <div className="filters">
@@ -282,9 +253,9 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
         <button
           type="button"
           className={focus?.kind === "late" ? "card stat dash-hit on" : "card stat dash-hit"}
-          onClick={() => openToday("late", `Late · ${dayLabel}`)}
+          onClick={() => openToday("late", "Late today")}
         >
-          <span>{isToday ? "Late today" : "Late"}</span>
+          <span>Late today</span>
           <strong className="tone-amber">{stats.late}</strong>
         </button>
         {stats.teams.map((team) => (
@@ -302,7 +273,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
 
       <div className="dash-charts">
         <article className="card">
-          <h2>{isToday ? "Today" : dayLabel}</h2>
+          <h2>Today</h2>
           <p className="muted">Click a slice to see those people.</p>
           <div className="chart-box">
             {stats.employees === 0 ? (
@@ -317,14 +288,14 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                     innerRadius={62}
                     outerRadius={92}
                     paddingAngle={3}
-                    onClick={(slice) => openToday(kindFromLabel(String(slice.name)), `${slice.name} · ${dayLabel}`)}
+                    onClick={(slice) => openToday(kindFromLabel(String(slice.name)), `${slice.name} today`)}
                   >
                     {stats.todayMix.map((slice) => (
                       <Cell key={slice.name} fill={slice.color} cursor="pointer" />
                     ))}
                   </Pie>
                   <Tooltip contentStyle={tooltipStyle} />
-                  <Legend onClick={(item) => openToday(kindFromLabel(String(item.value)), `${item.value} · ${dayLabel}`)} />
+                  <Legend onClick={(item) => openToday(kindFromLabel(String(item.value)), `${item.value} today`)} />
                 </PieChart>
               </ResponsiveContainer>
             )}
@@ -345,7 +316,6 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                 <Bar dataKey="onTime" name="On time" stackId="status" fill={GREEN} cursor="pointer" onClick={(bar) => openToday("on_time", `On time · ${bar.payload.team}`, bar.payload.teamId)} />
                 <Bar dataKey="late" name="Late" stackId="status" fill={AMBER} cursor="pointer" onClick={(bar) => openToday("late", `Late · ${bar.payload.team}`, bar.payload.teamId)} />
                 <Bar dataKey="leave" name="On leave" stackId="status" fill={LEAVE} cursor="pointer" onClick={(bar) => openToday("leave", `On leave · ${bar.payload.team}`, bar.payload.teamId)} />
-                <Bar dataKey="weekend" name="Weekend" stackId="status" fill={HOLIDAY} cursor="pointer" onClick={(bar) => openToday("weekend", `Weekend · ${bar.payload.team}`, bar.payload.teamId)} />
                 <Bar dataKey="notIn" name="Absent" stackId="status" fill={MUTED} cursor="pointer" radius={[6, 6, 0, 0]} onClick={(bar) => openToday("not_in", `Absent · ${bar.payload.team}`, bar.payload.teamId)} />
               </BarChart>
             </ResponsiveContainer>
@@ -357,7 +327,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
         <div className="calendar-head">
           <div>
             <h2>{range === "week" ? "This week" : "This month"}</h2>
-            <p className="muted">Bars show each status. The line is the present trend. Click a bar to see who it includes.</p>
+            <p className="muted">Bars show each status across the week or month. The line is the present trend.</p>
           </div>
           <div className="filters">
             <button type="button" className={range === "week" ? "chip on" : "chip"} onClick={() => setRange("week")}>
@@ -369,17 +339,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
           </div>
         </div>
         <div className="chart-box chart-box-wide">
-          <PeriodChart
-            data={stats.trend}
-            bars={ATTENDANCE_BARS}
-            trendKey="present"
-            trendName="Present trend"
-            onBarClick={(key, row) => {
-              const kind = key === "onTime" ? "on_time" : key === "late" ? "late" : key === "leave" ? "leave" : key === "weekend" ? "weekend" : "not_in";
-              const label = key === "onTime" ? "On time" : key === "late" ? "Late" : key === "leave" ? "On leave" : key === "weekend" ? "Weekend" : "Absent";
-              open({ kind, when: new Date(Number(row.when)), title: `${label} · ${row.day}` });
-            }}
-          />
+          <PeriodChart data={stats.trend} bars={ATTENDANCE_BARS} trendKey="present" trendName="Present trend" />
         </div>
       </article>
 
@@ -404,11 +364,10 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                 </div>
                 <ul>
                   {people.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
+                    const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
                     const record = db.attendance.find(
-                      (item) => item.userId === person.userId && item.date === todayKey(selected)
+                      (item) => item.userId === person.userId && item.date === todayKey(focus.when)
                     );
-                    const day = todayKey(selected);
                     const note =
                       focus.kind === "leave" || status === "leave"
                         ? leaveSpan(person)
@@ -418,8 +377,6 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                             ? "Absentee"
                           : status === "on_time"
                             ? "On time"
-                            : status === "weekend"
-                            ? "Weekend"
                             : status === "not_in"
                               ? "Absent"
                               : "";
@@ -437,7 +394,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                           <span>{formatClock(record?.checkOut)}</span>
                           <span>{note}</span>
                         </Link>
-                        <MarkPresentButton userId={person.userId} date={day} status={status} marked={record?.markedPresent} />
+                        <MarkPresentButton userId={person.userId} date={todayKey(focus.when)} status={status} marked={record?.markedPresent} />
                       </li>
                     );
                   })}
