@@ -199,7 +199,16 @@ button { cursor: pointer; }
 .report-table .tone-green,
 .report-table .tone-amber,
 .report-table .tone-absent { font-weight: 700; }
-.status-cell { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.report-table td:nth-child(4) { white-space: nowrap; }
+.status-cell {
+  display: inline-grid;
+  grid-template-columns: 86px 30px;
+  align-items: center;
+  column-gap: 8px;
+  vertical-align: middle;
+}
+.status-cell > .badge,
+.status-cell > .muted { justify-self: center; }
 .icon-btn {
   width: 30px;
   height: 30px;
