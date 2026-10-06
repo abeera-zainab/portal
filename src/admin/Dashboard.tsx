@@ -15,7 +15,6 @@ import {
 } from "recharts";
 import type { Person, TeamId } from "../types";
 import { AttendanceCard } from "../AttendanceCard";
-import { MarkPresentButton } from "../MarkPresent";
 import { ATTENDANCE_BARS, PeriodChart } from "../PeriodChart";
 import {
   TEAMS,
@@ -395,7 +394,6 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                           <span>{formatClock(record?.checkOut)}</span>
                           <span>{note}</span>
                         </Link>
-                        <MarkPresentButton userId={person.userId} date={todayKey(focus.when)} status={status} marked={record?.markedPresent} />
                       </li>
                     );
                   })}
