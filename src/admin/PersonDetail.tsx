@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Person, WorkMode } from "../types";
 import {
+  attendanceHref,
   attendanceStatus,
   canReceiveReports,
   hasLeadRights,
@@ -429,7 +430,7 @@ export function UserDetail({ backTo, backLabel }: { backTo: string; backLabel: s
           <AssignedTags person={person} />
           <p className="muted">{person.userId}</p>
         </div>
-        <Link className="btn secondary" to={`/attendance/${person.userId}`}>
+        <Link className="btn secondary" to={attendanceHref(person.userId, session?.role === "admin" ? "users" : "team")}>
           Attendance report
         </Link>
       </header>

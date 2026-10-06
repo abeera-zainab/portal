@@ -5,6 +5,7 @@ import { AccountSettings } from "../AccountSettings";
 import { AccountSettingsButton, DashboardIcon, LeaveIcon, ReportIcon, SideLink, TeamIcon } from "../ShellChrome";
 import {
   TEAMS,
+  attendanceHref,
   attendanceStatus,
   dayStatusClass,
   dayStatusLabel,
@@ -36,11 +37,9 @@ export function HrShell() {
         </div>
         <p className="nav-label">Menu</p>
         <nav>
-          {pss ? (
-            <SideLink to="/dashboard" end icon={<DashboardIcon />}>
-              Dashboard
-            </SideLink>
-          ) : null}
+          <SideLink to="/dashboard" end icon={<DashboardIcon />}>
+            Dashboard
+          </SideLink>
           <SideLink to="/attendance" icon={<ReportIcon />}>
             Attendance
           </SideLink>
@@ -77,13 +76,13 @@ export function HrShell() {
         </header>
         <div className="admin-page">
           <Routes>
-            {pss ? <Route path="/dashboard" element={<Dashboard variant="hr" />} /> : null}
+            <Route path="/dashboard" element={<Dashboard variant="hr" />} />
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/:userId" element={<AttendanceReport />} />
             <Route path="/teams" element={<HrTeams />} />
             {grant ? <Route path="/leave" element={<GrantLeave />} /> : null}
             <Route path="/account" element={<AccountSettings person={session} />} />
-            <Route path="*" element={<Navigate to={pss ? "/dashboard" : "/attendance"} replace />} />
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </div>
       </div>
@@ -129,7 +128,7 @@ function HrTeams() {
                     return (
                       <tr key={person.userId}>
                         <td>
-                          <Link className="name-btn" to={`/attendance/${person.userId}`}>
+                          <Link className="name-btn" to={attendanceHref(person.userId, "teams")}>
                             {person.name}
                           </Link>
                         </td>
@@ -246,7 +245,9 @@ function GrantLeave() {
                 return (
                   <tr key={request.id}>
                     <td>
-                      {owner?.name ?? request.userId}
+                      <Link className="name-btn" to={attendanceHref(request.userId, "leave")}>
+                        {owner?.name ?? request.userId}
+                      </Link>
                       <div className="muted">{request.userId}</div>
                     </td>
                     <td>

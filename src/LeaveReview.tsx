@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { PeriodChart } from "./PeriodChart";
 import type { LeaveRequest, Person } from "./types";
-import { deleteLeave, isOnLeave, personTeams, reviewableLeave, reviewLeave, teamName, teamRoster, todayKey, useDatabase, useSession } from "./store";
+import { attendanceHref, deleteLeave, isOnLeave, personTeams, reviewableLeave, reviewLeave, teamName, teamRoster, todayKey, useDatabase, useSession } from "./store";
 
 const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
@@ -204,7 +204,7 @@ export function TeamLeaveBoard({ lead }: { lead: Person }) {
                 <ul>
                   {dayPeople.map((person) => (
                     <li key={person.userId}>
-                      <Link className="roster-person" to={`/users/${person.userId}`}>
+                      <Link className="roster-person" to={attendanceHref(person.userId, "leave")}>
                         <span>
                           {person.name}
                           <small>{person.userId}</small>
@@ -225,7 +225,7 @@ export function TeamLeaveBoard({ lead }: { lead: Person }) {
                   const owner = db.people.find((person) => person.userId === request.userId);
                   return (
                     <li key={request.id}>
-                      <Link className="roster-person" to={`/users/${request.userId}`}>
+                      <Link className="roster-person" to={attendanceHref(request.userId, "leave")}>
                         <span>
                           {owner?.name ?? request.userId}
                           <small>
@@ -317,7 +317,9 @@ export function LeaveInbox({
               return (
                 <tr key={request.id}>
                   <td>
-                    {owner?.name ?? request.userId}
+                    <Link className="name-btn" to={attendanceHref(request.userId, "leave")}>
+                      {owner?.name ?? request.userId}
+                    </Link>
                     <div className="muted">{owner?.userId}</div>
                   </td>
                   <td>

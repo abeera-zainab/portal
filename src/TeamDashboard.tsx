@@ -5,6 +5,7 @@ import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
 import type { Person, TeamId } from "./types";
 import { monthTotals } from "./attendanceStats";
 import {
+  attendanceHref,
   attendanceStatus,
   canSeeLate,
   isOnLeave,
@@ -309,7 +310,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                     return (
                       <tr key={person.userId}>
                         <td>
-                          <Link className="name-btn" to={`/users/${person.userId}`}>
+                          <Link className="name-btn" to={attendanceHref(person.userId, "team")}>
                             {person.name}
                           </Link>
                           <div className="muted">{person.userId}</div>
@@ -366,7 +367,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                               : "Absent";
                     return (
                       <li key={person.userId}>
-                        <Link className="roster-person roster-row" to={`/users/${person.userId}`}>
+                        <Link className="roster-person roster-row" to={attendanceHref(person.userId, "team")}>
                           <span>
                             {person.name}
                             <small>{person.userId}</small>

@@ -2,7 +2,6 @@ import { useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
 import type { Person } from "./types";
-import { AttendanceCalendar } from "./AttendanceCalendar";
 import { attendanceTotals } from "./attendanceStats";
 import { attendanceStatus, todayKey, useDatabase } from "./store";
 
@@ -46,7 +45,6 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
   const totals = attendanceTotals(person, db.attendance, db.leave);
   const recorded = totals.present + totals.absent + totals.leaves;
   const onTime = Math.max(0, totals.present - totals.late);
-  const history = db.attendance.filter((record) => record.userId === person.userId);
   const mix = [
     { name: "On time", value: onTime, color: GREEN },
     { name: "Late", value: totals.late, color: AMBER },
@@ -139,7 +137,6 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
           </div>
         </article>
       </div>
-      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} />
     </>
   );
 }

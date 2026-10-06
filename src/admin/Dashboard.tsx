@@ -19,6 +19,7 @@ import { MarkPresentButton } from "../MarkPresent";
 import { ATTENDANCE_BARS, PeriodChart } from "../PeriodChart";
 import {
   TEAMS,
+  attendanceHref,
   attendanceStatus,
   isOnLeave,
   formatClock,
@@ -382,7 +383,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                               : "";
                     return (
                       <li key={person.userId}>
-                        <Link className="roster-person roster-row" to={viewer ? `/attendance/${person.userId}` : `/users/${person.userId}`}>
+                        <Link className="roster-person roster-row" to={attendanceHref(person.userId, "dashboard")}>
                           <span>
                             {person.name}
                             <small>

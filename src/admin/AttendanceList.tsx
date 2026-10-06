@@ -4,6 +4,7 @@ import type { Database, Person } from "../types";
 import { attendanceTotals } from "../attendanceStats";
 import type { DayStatus } from "../store";
 import {
+  attendanceHref,
   attendanceStatus,
   canMarkPresent,
   dayStatusClass,
@@ -284,7 +285,7 @@ export function AttendanceList() {
               return (
                 <tr key={person.userId}>
                   <td>
-                    <Link className="name-btn" to={`/attendance/${person.userId}`}>
+                    <Link className="name-btn" to={attendanceHref(person.userId, "attendance")}>
                       {person.name}
                     </Link>
                   </td>

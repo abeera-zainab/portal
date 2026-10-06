@@ -161,6 +161,8 @@ export const isPersonActive = (person: Person) => person.active !== false;
 
 export const isHrPss = (person: Person) => person.role === "hr" && person.username.toLowerCase() === "hr-pss";
 
+export const attendanceHref = (userId: string, from: string) => `/attendance/${userId}?from=${encodeURIComponent(from)}`;
+
 export const canEditAttendance = (person: Person | null) => Boolean(person && person.role === "hr" && !isHrPss(person));
 
 export const canMarkPresent = (person: Person | null) => Boolean(person && (person.role === "admin" || person.role === "hr"));

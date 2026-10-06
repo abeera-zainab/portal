@@ -21,6 +21,7 @@ import {
   TeamIcon,
 } from "./ShellChrome";
 import {
+  attendanceHref,
   attendanceStatus,
   dayStatusClass,
   dayStatusLabel,
@@ -84,11 +85,9 @@ function StaffShell({ person }: { person: Person }) {
           <SideLink to="/" end icon={<DashboardIcon />}>
             Dashboard
           </SideLink>
-          {hasLeadRights(person) ? (
-            <SideLink to="/my-attendance" icon={<ReportIcon />}>
-              My attendance
-            </SideLink>
-          ) : null}
+          <SideLink to="/my-attendance" icon={<ReportIcon />}>
+            My attendance
+          </SideLink>
           <SideLink to="/leave" end icon={<LeaveIcon />}>
             Leave
           </SideLink>
@@ -125,7 +124,7 @@ function StaffShell({ person }: { person: Person }) {
             <Route path="/" element={hasLeadRights(person) ? <TeamHome person={person} /> : <EmployeeHome person={person} />} />
             <Route
               path="/my-attendance"
-              element={hasLeadRights(person) ? <AttendanceReport mine /> : <Navigate to="/" replace />}
+              element={<AttendanceReport mine />}
             />
             <Route
               path="/leave"
@@ -357,7 +356,7 @@ function TeamTools({ lead }: { lead: Person }) {
     <>
       <section className="card">
         <h2>Team</h2>
-        <p className="muted">People who report to you. Open a person to manage them.</p>
+        <p className="muted">People who report to you. Open a person to see their attendance.</p>
         <table>
           <thead>
             <tr>
@@ -378,7 +377,7 @@ function TeamTools({ lead }: { lead: Person }) {
                 return (
                   <tr key={member.userId}>
                     <td>
-                      <Link className="name-btn" to={`/users/${member.userId}`}>
+                      <Link className="name-btn" to={attendanceHref(member.userId, "team")}>
                         {member.name}
                       </Link>
                     </td>
