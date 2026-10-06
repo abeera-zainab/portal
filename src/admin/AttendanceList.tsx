@@ -13,7 +13,8 @@ import {
   isHrPss,
   isWeekend,
   markPresent,
-  roleTags,
+  personTeams,
+  teamName,
   todayKey,
   useDatabase,
   useSession,
@@ -102,7 +103,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     const label = beforeJoin ? "Not joined" : !status || status === "weekend" ? "—" : reportStatusLabel(status);
     return {
       name: person.name,
-      roles: roleTags(person),
+      teams: personTeams(person).map((team) => teamName(team)).join(", ") || "No team",
       checkIn,
       checkOut,
       label,
@@ -123,7 +124,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     .map(
       (row) => `<tr>
         <td class="name">${escapeHtml(row.name)}</td>
-        <td class="tags">${row.roles.map((tag) => `<span class="tag ${escapeHtml(tag.id)}">${escapeHtml(tag.label)}</span>`).join("")}</td>
+        <td>${escapeHtml(row.teams)}</td>
         <td class="${row.checkIn === "—" ? "time-in empty" : "time-in"}">${escapeHtml(row.checkIn)}</td>
         <td class="${row.checkOut === "—" ? "time-out empty" : "time-out"}">${escapeHtml(row.checkOut)}</td>
         <td><span class="status ${row.tone}">${escapeHtml(row.label)}</span></td>
@@ -155,11 +156,6 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     .status.leave { background: #e7eef8; color: #1d4e89; }
     .status.absent { background: #fde8ee; color: #9f1239; }
     .status.plain { background: #eeeae3; color: #5c534b; }
-    .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-    .tag { display: inline-block; border-radius: 999px; padding: 2px 8px; font-size: 12px; background: #f3ecdf; color: #4a4036; }
-    .tag.officer { background: #f4e7cf; color: #9a5b12; }
-    .tag.team_lead { background: #e5f2eb; color: #1f6b4a; }
-    .tag.mto { background: #efe4c8; color: #6b4e12; }
     @media print {
       body { margin: 12px; }
       button { display: none; }
@@ -180,7 +176,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     <thead>
       <tr>
         <th>Name</th>
-        <th>Role</th>
+        <th>Team</th>
         <th>Check in</th>
         <th>Check out</th>
         <th>Status</th>
