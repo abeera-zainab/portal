@@ -1,7 +1,8 @@
 import { useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { AttendanceRecord, LeaveRequest } from "../types";
-import { attendanceStatus, canEditAttendance, dayStatusClass, dayStatusLabel, deleteAttendance, formatClock, formatWorked, historyFor, isOnLeave, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
+import { MarkPresentButton } from "../MarkPresent";
+import { attendanceStatus, canEditAttendance, canMarkPresent, dayStatusClass, dayStatusLabel, deleteAttendance, formatClock, formatWorked, historyFor, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
 import { AssignedTags, canViewPerson, PersonAdjust } from "./PersonDetail";
 
 const FULL_DAY = 8 * 60;
@@ -113,24 +114,26 @@ function AttendanceCalendar({
         {cells.map(({ date, outside }) => {
           const key = dayKey(date);
           const record = byDate.get(key);
-          const onLeave = isOnLeave(userId, leave, key);
+          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const weekend = status === "weekend";
+          const onLeave = status === "leave";
           const minutes =
             record?.workedMinutes ??
-            (record && !record.checkOut && key === today
+            (record?.checkIn && !record.checkOut && key === today
               ? Math.max(0, Math.round((Date.now() - new Date(record.checkIn).getTime()) / 60000))
               : undefined);
-          const open = Boolean(record && !record.checkOut);
-          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const open = Boolean(record?.checkIn && !record.checkOut);
           const late = status === "late";
           const absentee = status === "absentee";
-          const tone = onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
+          const tone = weekend ? "" : onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
           const width = minutes === undefined ? 0 : Math.min(100, Math.round((minutes / FULL_DAY) * 100));
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
-              {onLeave ? <span className="badge no">On leave</span> : null}
+              {weekend ? <span className="badge holiday">Weekend</span> : null}
+              {!weekend && onLeave ? <span className="badge leave">Leave</span> : null}
               {absentee ? <span className="badge no">Absentee</span> : null}
-              {!onLeave && minutes !== undefined ? (
+              {!weekend && !onLeave && minutes !== undefined ? (
                 <>
                   <span className={`calendar-hours ${tone}`}>{hoursLabel(minutes)}</span>
                   <span className={`calendar-bar ${tone}`}>
@@ -153,6 +156,27 @@ const timeValue = (iso?: string) => {
   const minute = String(date.getMinutes()).padStart(2, "0");
   return `${hour}:${minute}`;
 };
+
+function PresentDay({ userId, lateAllowed }: { userId: string; lateAllowed: boolean }) {
+  const db = useDatabase();
+  const [day, setDay] = useState(todayKey());
+  const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${day}T12:00:00`), lateAllowed);
+  const record = db.attendance.find((item) => item.userId === userId && item.date === day);
+  return (
+    <section className="card">
+      <h2>Set a day to present</h2>
+      <p className="muted">Change an absent, late, or leave day to present. Saturday and Sunday stay a weekend holiday.</p>
+      <div className="row" style={{ marginTop: 12, alignItems: "end" }}>
+        <label>
+          Day
+          <input type="date" max={todayKey()} value={day} onChange={(event) => event.target.value && setDay(event.target.value)} />
+        </label>
+        <span className={dayStatusClass(status)}>{dayStatusLabel(status, "Absent")}</span>
+        <MarkPresentButton userId={userId} date={day} status={status} marked={record?.markedPresent} />
+      </div>
+    </section>
+  );
+}
 
 function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllowed: boolean }) {
   const db = useDatabase();
@@ -354,6 +378,7 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
       </div>
       {mine || session?.role === "hr" ? null : <PersonAdjust person={person} />}
       {canEditAttendance(session) && !mine ? <HrAttendanceEditor userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
+      {!mine && canMarkPresent(session) ? <PresentDay userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
       <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} />
       <div className="stat-row">
         <div className="card stat">
@@ -399,6 +424,7 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
                   <td>{record.date}</td>
                   <td>
                     <span className={dayStatusClass(status)}>{dayStatusLabel(status)}</span>
+                    <MarkPresentButton userId={person.userId} date={record.date} status={status} marked={record.markedPresent} />
                   </td>
                   <td>{formatClock(record.checkIn)}</td>
                   <td>{formatClock(record.checkOut)}</td>

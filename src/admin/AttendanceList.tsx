@@ -16,6 +16,7 @@ import {
   useDatabase,
   useSession,
 } from "../store";
+import { MarkPresentButton } from "../MarkPresent";
 import { AssignedTags } from "./PersonDetail";
 
 const shiftKey = (day: string, delta: number) => {
@@ -54,7 +55,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     },
     {} as Record<string, number>
   );
-  const summary = ["On time", "Late", "Absentee", "Leave", "Absent"]
+  const summary = ["On time", "Late", "Absentee", "Leave", "Weekend", "Absent"]
     .map((label) => `${label}: ${counts[label] ?? 0}`)
     .join(" · ");
   const body = rows
@@ -211,6 +212,7 @@ export function AttendanceList() {
               <th>Total days</th>
               <th>Present</th>
               <th>Absent</th>
+              <th>Holiday</th>
               <th>Total leaves</th>
               <th>Check in</th>
               <th>Check out</th>
@@ -253,6 +255,7 @@ export function AttendanceList() {
                   <td>{totals.total}</td>
                   <td>{totals.present}</td>
                   <td>{totals.absent}</td>
+                  <td>{totals.weekend}</td>
                   <td>{totals.leaves}</td>
                   <td>{beforeJoin ? "—" : formatClock(record?.checkIn)}</td>
                   <td>{beforeJoin ? "—" : formatClock(record?.checkOut)}</td>
@@ -261,6 +264,9 @@ export function AttendanceList() {
                       <span className="badge wait">Not joined</span>
                     ) : (
                       <span className={dayStatusClass(status!)}>{dayStatusLabel(status!, "Absent")}</span>
+                    )}
+                    {beforeJoin ? null : (
+                      <MarkPresentButton userId={person.userId} date={reportDay} status={status} marked={record?.markedPresent} />
                     )}
                   </td>
                   <td>{totals.late}</td>

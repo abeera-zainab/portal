@@ -22,6 +22,8 @@ import {
 } from "./ShellChrome";
 import {
   attendanceStatus,
+  dayStatusClass,
+  dayStatusLabel,
   hasLeadRights,
   hasOfficerRank,
   hasTeamLeadRank,
@@ -383,17 +385,7 @@ function TeamTools({ lead }: { lead: Person }) {
                     <td>{member.userId}</td>
                     <td>{roleLabel(member)}</td>
                     <td>
-                      {today === "late" ? (
-                        <span className="badge late">Late</span>
-                      ) : today === "absentee" ? (
-                        <span className="badge no">Absentee</span>
-                      ) : today === "leave" ? (
-                        <span className="badge leave">Leave</span>
-                      ) : today === "on_time" ? (
-                        <span className="badge">On time</span>
-                      ) : (
-                        <span className="badge wait">Not in</span>
-                      )}
+                      <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>
                     </td>
                   </tr>
                 );

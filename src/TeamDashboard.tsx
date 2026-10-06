@@ -21,6 +21,7 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
+const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -29,7 +30,7 @@ const tooltipStyle = {
   fontSize: 13,
 };
 
-type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending";
+type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending" | "weekend";
 
 type Focus = {
   title: string;
@@ -64,6 +65,7 @@ const kindFromLabel = (label: string): Kind => {
   if (label === "Late") return "late";
   if (label === "On leave" || label === "Leave") return "leave";
   if (label === "Present") return "present";
+  if (label === "Weekend") return "weekend";
   return "not_in";
 };
 
@@ -76,12 +78,13 @@ export function TeamDashboard({ lead }: { lead: Person }) {
 
   const stats = useMemo(() => {
     const tally = (date: Date) => {
-      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
+      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0, weekend: 0 };
       for (const person of members) {
         const status = attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
+        else if (status === "weekend") counts.weekend += 1;
         else counts.notIn += 1;
       }
       return counts;
@@ -92,6 +95,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
       { name: "On time", value: today.onTime, color: GREEN },
       { name: "Late", value: today.late, color: AMBER },
       { name: "On leave", value: today.leave, color: LEAVE },
+      { name: "Weekend", value: today.weekend, color: HOLIDAY },
       { name: "Absent", value: today.notIn, color: MUTED },
     ];
     const trend = periodDays(range).map((date) => {
@@ -103,6 +107,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
         late: counts.late,
         present: counts.onTime + counts.late,
         leave: counts.leave,
+        weekend: counts.weekend,
         absent: counts.notIn,
       };
     });
@@ -112,6 +117,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
       late: today.late,
       leave: today.leave,
       notIn: today.notIn,
+      weekend: today.weekend,
       pending: reviewableLeave(lead, db.people, db.leave).filter((request) => request.status === "pending").length,
       todayMix,
       trend,
@@ -211,6 +217,14 @@ export function TeamDashboard({ lead }: { lead: Person }) {
         </button>
         <button
           type="button"
+          className={focus?.kind === "weekend" ? "card stat dash-hit on" : "card stat dash-hit"}
+          onClick={() => openToday("weekend", "Weekend")}
+        >
+          <span>Holiday</span>
+          <strong>{stats.weekend}</strong>
+        </button>
+        <button
+          type="button"
           className={focus?.kind === "leave" ? "card stat dash-hit on" : "card stat dash-hit"}
           onClick={() => openToday("leave", "On leave today")}
         >
@@ -280,8 +294,8 @@ export function TeamDashboard({ lead }: { lead: Person }) {
               trendKey="present"
               trendName="Present trend"
               onBarClick={(key, row) => {
-                const kind = key === "onTime" ? "on_time" : key === "late" ? "late" : key === "leave" ? "leave" : "not_in";
-                const label = key === "onTime" ? "On time" : key === "late" ? "Late" : key === "leave" ? "On leave" : "Absent";
+                const kind = key === "onTime" ? "on_time" : key === "late" ? "late" : key === "leave" ? "leave" : key === "weekend" ? "weekend" : "not_in";
+                const label = key === "onTime" ? "On time" : key === "late" ? "Late" : key === "leave" ? "On leave" : key === "weekend" ? "Weekend" : "Absent";
                 open({ kind, when: new Date(Number(row.when)), title: `${label} · ${row.day}` });
               }}
             />
@@ -301,6 +315,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                 <th>Person</th>
                 <th>Present</th>
                 <th>Absent</th>
+                <th>Holiday</th>
                 <th>On leave</th>
                 <th>Late</th>
               </tr>
@@ -308,7 +323,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
             <tbody>
               {members.length === 0 ? (
                 <tr>
-                  <td colSpan={5}>No one is on your team yet.</td>
+                  <td colSpan={6}>No one is on your team yet.</td>
                 </tr>
               ) : (
                 [...members]
@@ -325,6 +340,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                         </td>
                         <td>{totals.present}</td>
                         <td>{totals.absent}</td>
+                        <td>{totals.weekend}</td>
                         <td>{totals.leaves}</td>
                         <td>{totals.late}</td>
                       </tr>
@@ -372,7 +388,9 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                               ? "Absentee"
                             : status === "on_time"
                               ? "On time"
-                              : "Absent";
+                              : status === "weekend"
+                                ? "Weekend"
+                                : "Absent";
                     return (
                       <li key={person.userId}>
                         <Link className="roster-person roster-row" to={`/users/${person.userId}`}>

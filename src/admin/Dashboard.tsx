@@ -15,6 +15,7 @@ import {
 } from "recharts";
 import type { Person, TeamId } from "../types";
 import { AttendanceCard } from "../AttendanceCard";
+import { MarkPresentButton } from "../MarkPresent";
 import { ATTENDANCE_BARS, PeriodChart } from "../PeriodChart";
 import {
   TEAMS,
@@ -33,6 +34,7 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
+const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -41,7 +43,7 @@ const tooltipStyle = {
   fontSize: 13,
 };
 
-type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending" | "members";
+type Kind = "present" | "on_time" | "late" | "leave" | "not_in" | "pending" | "members" | "weekend";
 
 type Focus = {
   title: string;
@@ -85,6 +87,7 @@ const kindFromLabel = (label: string): Kind => {
   if (label === "Late") return "late";
   if (label === "On leave" || label === "Leave") return "leave";
   if (label === "Present") return "present";
+  if (label === "Weekend") return "weekend";
   return "not_in";
 };
 
@@ -107,12 +110,13 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
 
   const stats = useMemo(() => {
     const tally = (date: Date) => {
-      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
+      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0, weekend: 0 };
       for (const person of staff) {
         const status = attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
+        else if (status === "weekend") counts.weekend += 1;
         else counts.notIn += 1;
       }
       return counts;
@@ -123,17 +127,19 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       { name: "On time", value: today.onTime, color: GREEN, kind: "on_time" as Kind },
       { name: "Late", value: today.late, color: AMBER, kind: "late" as Kind },
       { name: "On leave", value: today.leave, color: LEAVE, kind: "leave" as Kind },
+      { name: "Weekend", value: today.weekend, color: HOLIDAY, kind: "weekend" as Kind },
       { name: "Absent", value: today.notIn, color: MUTED, kind: "not_in" as Kind },
     ];
 
     const byTeam = TEAMS.map((team) => {
       const members = staff.filter((person) => personTeams(person).includes(team.id));
-      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
+      const counts = { onTime: 0, late: 0, leave: 0, notIn: 0, weekend: 0 };
       for (const person of members) {
         const status = attendanceStatus(person.userId, db.attendance, db.leave, selected, Boolean(person.lateAllowed));
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
+        else if (status === "weekend") counts.weekend += 1;
         else counts.notIn += 1;
       }
       return { team: team.name, teamId: team.id, ...counts };
@@ -147,6 +153,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
         onTime: counts.onTime,
         late: counts.late,
         leave: counts.leave,
+        weekend: counts.weekend,
         absent: counts.notIn,
         present: counts.onTime + counts.late,
       };
@@ -338,6 +345,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                 <Bar dataKey="onTime" name="On time" stackId="status" fill={GREEN} cursor="pointer" onClick={(bar) => openToday("on_time", `On time · ${bar.payload.team}`, bar.payload.teamId)} />
                 <Bar dataKey="late" name="Late" stackId="status" fill={AMBER} cursor="pointer" onClick={(bar) => openToday("late", `Late · ${bar.payload.team}`, bar.payload.teamId)} />
                 <Bar dataKey="leave" name="On leave" stackId="status" fill={LEAVE} cursor="pointer" onClick={(bar) => openToday("leave", `On leave · ${bar.payload.team}`, bar.payload.teamId)} />
+                <Bar dataKey="weekend" name="Weekend" stackId="status" fill={HOLIDAY} cursor="pointer" onClick={(bar) => openToday("weekend", `Weekend · ${bar.payload.team}`, bar.payload.teamId)} />
                 <Bar dataKey="notIn" name="Absent" stackId="status" fill={MUTED} cursor="pointer" radius={[6, 6, 0, 0]} onClick={(bar) => openToday("not_in", `Absent · ${bar.payload.team}`, bar.payload.teamId)} />
               </BarChart>
             </ResponsiveContainer>
@@ -367,8 +375,8 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
             trendKey="present"
             trendName="Present trend"
             onBarClick={(key, row) => {
-              const kind = key === "onTime" ? "on_time" : key === "late" ? "late" : key === "leave" ? "leave" : "not_in";
-              const label = key === "onTime" ? "On time" : key === "late" ? "Late" : key === "leave" ? "On leave" : "Absent";
+              const kind = key === "onTime" ? "on_time" : key === "late" ? "late" : key === "leave" ? "leave" : key === "weekend" ? "weekend" : "not_in";
+              const label = key === "onTime" ? "On time" : key === "late" ? "Late" : key === "leave" ? "On leave" : key === "weekend" ? "Weekend" : "Absent";
               open({ kind, when: new Date(Number(row.when)), title: `${label} · ${row.day}` });
             }}
           />
@@ -400,6 +408,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                     const record = db.attendance.find(
                       (item) => item.userId === person.userId && item.date === todayKey(selected)
                     );
+                    const day = todayKey(selected);
                     const note =
                       focus.kind === "leave" || status === "leave"
                         ? leaveSpan(person)
@@ -409,6 +418,8 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                             ? "Absentee"
                           : status === "on_time"
                             ? "On time"
+                            : status === "weekend"
+                            ? "Weekend"
                             : status === "not_in"
                               ? "Absent"
                               : "";
@@ -426,6 +437,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                           <span>{formatClock(record?.checkOut)}</span>
                           <span>{note}</span>
                         </Link>
+                        <MarkPresentButton userId={person.userId} date={day} status={status} marked={record?.markedPresent} />
                       </li>
                     );
                   })}

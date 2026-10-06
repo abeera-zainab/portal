@@ -89,6 +89,9 @@ await pool.query(`
     PRIMARY KEY (user_id, date)
   );
 
+  ALTER TABLE attendance ADD COLUMN IF NOT EXISTS marked_present BOOLEAN NOT NULL DEFAULT FALSE;
+  ALTER TABLE attendance ALTER COLUMN check_in DROP NOT NULL;
+
   CREATE TABLE IF NOT EXISTS leave_requests (
     id TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES people(user_id) ON DELETE CASCADE,
@@ -155,7 +158,7 @@ async function readState() {
        FROM people ORDER BY user_id`
     ),
     pool.query(
-      `SELECT user_id, to_char(date, 'YYYY-MM-DD') AS date, check_in, check_out, late, worked_minutes
+      `SELECT user_id, to_char(date, 'YYYY-MM-DD') AS date, check_in, check_out, late, worked_minutes, marked_present
        FROM attendance ORDER BY date DESC`
     ),
     pool.query(
@@ -186,10 +189,11 @@ async function readState() {
     attendance: attendance.rows.map((row) => ({
       userId: row.user_id,
       date: row.date,
-      checkIn: new Date(row.check_in).toISOString(),
+      checkIn: row.check_in ? new Date(row.check_in).toISOString() : "",
       checkOut: row.check_out ? new Date(row.check_out).toISOString() : undefined,
       late: row.late,
       workedMinutes: row.worked_minutes ?? undefined,
+      markedPresent: Boolean(row.marked_present),
     })),
     leave: leave.rows.map((row) => ({
       id: row.id,
@@ -297,6 +301,11 @@ app.post("/api/attendance/check-in", async (req, res) => {
   else cutoff.setHours(9, 30, 0, 0);
   const late = now.getTime() > cutoff.getTime();
   const date = localDate(now);
+  const weekday = new Date(`${date}T12:00:00`).getDay();
+  if (weekday === 0 || weekday === 6) {
+    res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
+    return;
+  }
   try {
     await pool.query(
       `INSERT INTO attendance (user_id, date, check_in, late) VALUES ($1, $2, $3, $4)`,
@@ -360,6 +369,11 @@ app.put("/api/attendance", async (req, res) => {
     res.status(400).json({ error: "Enter a valid date and time." });
     return;
   }
+  const weekday = new Date(`${date}T12:00:00`).getDay();
+  if (weekday === 0 || weekday === 6) {
+    res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
+    return;
+  }
   if (checkOut && checkOut.getTime() < checkIn.getTime()) {
     res.status(400).json({ error: "Check out cannot be before check in." });
     return;
@@ -400,6 +414,52 @@ app.delete("/api/attendance", async (req, res) => {
     res.status(404).json({ error: "Attendance record not found." });
     return;
   }
+  res.json({ state: await readState() });
+});
+
+app.post("/api/attendance/present", async (req, res) => {
+  const who = await actor(req);
+  if (!who || (who.role !== "admin" && who.role !== "hr")) {
+    res.status(403).json({ error: "Only an admin or HR can change this status." });
+    return;
+  }
+  const userId = String(req.body.userId || "");
+  const date = String(req.body.date || "");
+  const present = req.body.present !== false;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    res.status(400).json({ error: "Enter a valid date." });
+    return;
+  }
+  const weekday = new Date(`${date}T12:00:00`).getDay();
+  if (weekday === 0 || weekday === 6) {
+    res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
+    return;
+  }
+  if (date > localDate()) {
+    res.status(400).json({ error: "Choose today or a past day." });
+    return;
+  }
+  const person = await pool.query(`SELECT user_id, role FROM people WHERE user_id = $1`, [userId]);
+  if (!person.rows[0]) {
+    res.status(404).json({ error: "Person not found." });
+    return;
+  }
+  if (isHrPss(who) && (person.rows[0].role === "hr" || person.rows[0].role === "admin")) {
+    res.status(400).json({ error: "That account cannot be changed." });
+    return;
+  }
+  if (!present) {
+    await pool.query(`DELETE FROM attendance WHERE user_id = $1 AND date = $2 AND check_in IS NULL`, [userId, date]);
+    await pool.query(`UPDATE attendance SET marked_present = FALSE WHERE user_id = $1 AND date = $2`, [userId, date]);
+    res.json({ state: await readState() });
+    return;
+  }
+  await pool.query(
+    `INSERT INTO attendance (user_id, date, check_in, late, marked_present)
+     VALUES ($1, $2, NULL, FALSE, TRUE)
+     ON CONFLICT (user_id, date) DO UPDATE SET marked_present = TRUE`,
+    [userId, date]
+  );
   res.json({ state: await readState() });
 });
 

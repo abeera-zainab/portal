@@ -331,6 +331,8 @@ textarea { min-height: 84px; resize: vertical; }
 .badge.mto { background: #efe4c8; color: #6b4e12; }
 .badge.late { background: var(--amber-soft); color: var(--amber); }
 .badge.leave { background: #e7eef8; color: #1d4e89; }
+.badge.holiday { background: #e4eef0; color: #3d6b7a; }
+.mark-present { display: block; margin-top: 6px; }
 .badge.wait { background: #eeeae3; color: #5c534b; }
 .badge.no { background: var(--red-soft); color: var(--red); }
 .calendar { display: grid; gap: 16px; }

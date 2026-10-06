@@ -29,6 +29,7 @@ export interface AttendanceRecord {
   checkOut?: string;
   late: boolean;
   workedMinutes?: number;
+  markedPresent?: boolean;
 }
 
 export interface LeaveRequest {

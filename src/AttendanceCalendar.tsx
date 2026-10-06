@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AttendanceRecord, LeaveRequest } from "./types";
-import { attendanceStatus, isOnLeave, todayKey } from "./store";
+import { attendanceStatus, todayKey } from "./store";
 
 const FULL_DAY = 8 * 60;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -111,24 +111,26 @@ export function AttendanceCalendar({
         {cells.map(({ date, outside }) => {
           const key = dayKey(date);
           const record = byDate.get(key);
-          const onLeave = isOnLeave(userId, leave, key);
+          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const weekend = status === "weekend";
+          const onLeave = status === "leave";
           const minutes =
             record?.workedMinutes ??
-            (record && !record.checkOut && key === today
+            (record?.checkIn && !record.checkOut && key === today
               ? Math.max(0, Math.round((Date.now() - new Date(record.checkIn).getTime()) / 60000))
               : undefined);
-          const open = Boolean(record && !record.checkOut);
-          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const open = Boolean(record?.checkIn && !record.checkOut);
           const late = status === "late";
           const absentee = status === "absentee";
-          const tone = onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
+          const tone = weekend ? "" : onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
           const width = minutes === undefined ? 0 : Math.min(100, Math.round((minutes / FULL_DAY) * 100));
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
-              {onLeave ? <span className="badge no">On leave</span> : null}
+              {weekend ? <span className="badge holiday">Weekend</span> : null}
+              {!weekend && onLeave ? <span className="badge leave">Leave</span> : null}
               {absentee ? <span className="badge no">Absentee</span> : null}
-              {!onLeave && minutes !== undefined ? (
+              {!weekend && !onLeave && minutes !== undefined ? (
                 <>
                   <span className={`calendar-hours ${tone}`}>{hoursLabel(minutes)}</span>
                   <span className={`calendar-bar ${tone}`}>

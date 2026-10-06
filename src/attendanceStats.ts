@@ -22,16 +22,18 @@ export function attendanceTotals(person: Person, attendance: Database["attendanc
   let absent = 0;
   let leaves = 0;
   let late = 0;
+  let weekend = 0;
   for (const day of eachDay(start, today)) {
     const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), Boolean(person.lateAllowed));
-    if (status === "leave") leaves += 1;
+    if (status === "weekend") weekend += 1;
+    else if (status === "leave") leaves += 1;
     else if (status === "late") {
       present += 1;
       late += 1;
     } else if (status === "on_time") present += 1;
     else absent += 1;
   }
-  return { total: present + absent + leaves, present, absent, leaves, late };
+  return { total: present + absent + leaves + weekend, present, absent, leaves, late, weekend };
 }
 
 export function monthTotals(person: Person, attendance: Database["attendance"], leave: Database["leave"], month = new Date()) {
@@ -42,10 +44,12 @@ export function monthTotals(person: Person, attendance: Database["attendance"], 
   let absent = 0;
   let leaves = 0;
   let late = 0;
+  let weekend = 0;
   if (start <= today) {
     for (const day of eachDay(start, today)) {
       const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), Boolean(person.lateAllowed));
-      if (status === "leave") leaves += 1;
+      if (status === "weekend") weekend += 1;
+      else if (status === "leave") leaves += 1;
       else if (status === "late") {
         present += 1;
         late += 1;
@@ -53,5 +57,5 @@ export function monthTotals(person: Person, attendance: Database["attendance"], 
       else absent += 1;
     }
   }
-  return { total: present + absent + leaves, present, absent, leaves, late };
+  return { total: present + absent + leaves + weekend, present, absent, leaves, late, weekend };
 }

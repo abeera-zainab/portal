@@ -10,6 +10,7 @@ const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
 const LEAVE = "#1d4e89";
 const MUTED = "#8a8178";
+const HOLIDAY = "#3d6b7a";
 
 const tooltipStyle = {
   background: "#fffdf8",
@@ -50,6 +51,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
     { name: "On time", value: onTime, color: GREEN },
     { name: "Late", value: totals.late, color: AMBER },
     { name: "On leave", value: totals.leaves, color: LEAVE },
+    { name: "Weekend", value: totals.weekend, color: HOLIDAY },
     { name: "Absent", value: totals.absent, color: MUTED },
   ];
   const trend = periodDays(range).map((date) => {
@@ -62,6 +64,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
       late: status === "late" ? 1 : 0,
       present: status === "on_time" || status === "late" ? 1 : 0,
       leave: status === "leave" ? 1 : 0,
+      weekend: status === "weekend" ? 1 : 0,
       absent: status === "not_in" || status === "absentee" ? 1 : 0,
     };
   });
@@ -86,6 +89,10 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
         <article className="card stat">
           <span>Absent</span>
           <strong>{totals.absent}</strong>
+        </article>
+        <article className="card stat">
+          <span>Holiday</span>
+          <strong>{totals.weekend}</strong>
         </article>
         <article className="card stat">
           <span>On leave</span>

@@ -44,7 +44,8 @@ export function AssignedTags({ person }: { person: Person }) {
   const onLeave = status === "leave";
   const lateToday = status === "late";
   const absenteeToday = status === "absentee";
-  if (!roles.length && !places.length && !onLeave && !lateToday && !absenteeToday) return null;
+  const weekendToday = status === "weekend";
+  if (!roles.length && !places.length && !onLeave && !lateToday && !absenteeToday && !weekendToday) return null;
   return (
     <div className="role-tags">
       {roles.map((tag) => (
@@ -63,6 +64,7 @@ export function AssignedTags({ person }: { person: Person }) {
       {onLeave ? <span className="badge leave">Leave</span> : null}
       {lateToday ? <span className="badge late">Late</span> : null}
       {absenteeToday ? <span className="badge no">Absentee</span> : null}
+      {weekendToday ? <span className="badge holiday">Weekend</span> : null}
     </div>
   );
 }

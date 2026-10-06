@@ -163,6 +163,8 @@ export const isHrPss = (person: Person) => person.role === "hr" && person.userna
 
 export const canEditAttendance = (person: Person | null) => Boolean(person && person.role === "hr" && !isHrPss(person));
 
+export const canMarkPresent = (person: Person | null) => Boolean(person && (person.role === "admin" || person.role === "hr"));
+
 export const canGrantLeave = (person: Person | null) => Boolean(person && isHrPss(person));
 
 export const canSeeLate = (person: Person | null) =>
@@ -193,7 +195,12 @@ export const isOnLeave = (userId: string, leave: Database["leave"], day = todayK
     (request) => request.userId === userId && request.status === "approved" && request.from <= day && request.to >= day
   );
 
-export type DayStatus = "on_time" | "late" | "leave" | "not_in" | "absentee";
+export type DayStatus = "on_time" | "late" | "leave" | "not_in" | "absentee" | "weekend";
+
+export const isWeekend = (day: string) => {
+  const weekday = new Date(`${day}T12:00:00`).getDay();
+  return weekday === 0 || weekday === 6;
+};
 
 const shiftDay = (day: string, delta: number) => {
   const date = new Date(`${day}T12:00:00`);
@@ -201,14 +208,10 @@ const shiftDay = (day: string, delta: number) => {
   return todayKey(date);
 };
 
-const isWeekend = (day: string) => {
-  const weekday = new Date(`${day}T12:00:00`).getDay();
-  return weekday === 0 || weekday === 6;
-};
-
 const checkedInLate = (userId: string, attendance: Database["attendance"], day: string, lateAllowed: boolean) => {
   const record = attendance.find((item) => item.userId === userId && item.date === day);
-  return Boolean(record && isLateCheckIn(new Date(record.checkIn), lateAllowed));
+  if (!record || record.markedPresent || !record.checkIn) return false;
+  return isLateCheckIn(new Date(record.checkIn), lateAllowed);
 };
 
 export const attendanceStatus = (
@@ -219,9 +222,11 @@ export const attendanceStatus = (
   lateAllowed = false
 ): DayStatus => {
   const day = todayKey(now);
-  if (isOnLeave(userId, leave, day)) return "leave";
+  if (isWeekend(day)) return "weekend";
   const record = attendance.find((item) => item.userId === userId && item.date === day);
-  if (!record) return "not_in";
+  if (record?.markedPresent) return "on_time";
+  if (isOnLeave(userId, leave, day)) return "leave";
+  if (!record || !record.checkIn) return "not_in";
   if (!isLateCheckIn(new Date(record.checkIn), lateAllowed)) return "on_time";
   let cursor = shiftDay(day, -1);
   let priorLate = 0;
@@ -246,6 +251,7 @@ export const dayStatusLabel = (status: DayStatus, absentLabel = "Not in") => {
   if (status === "late") return "Late";
   if (status === "leave") return "Leave";
   if (status === "absentee") return "Absentee";
+  if (status === "weekend") return "Weekend";
   return absentLabel;
 };
 
@@ -254,6 +260,7 @@ export const dayStatusClass = (status: DayStatus) => {
   if (status === "absentee") return "badge no";
   if (status === "leave") return "badge leave";
   if (status === "on_time") return "badge";
+  if (status === "weekend") return "badge holiday";
   return "badge wait";
 };
 
@@ -308,6 +315,10 @@ export const saveAttendance = async (userId: string, date: string, checkIn: stri
 
 export const deleteAttendance = async (userId: string, date: string) => {
   await mutate("/api/attendance", "DELETE", { userId, date });
+};
+
+export const markPresent = async (userId: string, date: string, present = true) => {
+  await mutate("/api/attendance/present", "POST", { userId, date, present });
 };
 
 export const requestLeave = async (userId: string, from: string, to: string, reason: string) => {
