@@ -108,6 +108,39 @@ await pool.query(`
     user_id TEXT NOT NULL REFERENCES people(user_id) ON DELETE CASCADE,
     expires_at TIMESTAMPTZ NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    title TEXT NOT NULL,
+    brief TEXT NOT NULL DEFAULT '',
+    description TEXT NOT NULL DEFAULT '',
+    assignee_user_id TEXT NOT NULL REFERENCES people(user_id) ON DELETE CASCADE,
+    status TEXT NOT NULL,
+    created_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'medium';
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+
+  CREATE TABLE IF NOT EXISTS task_comments (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    author_user_id TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    body TEXT NOT NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS task_activity (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id) ON DELETE CASCADE,
+    actor_user_id TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    kind TEXT NOT NULL,
+    detail TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
 `);
 
 await pool.query(`UPDATE people SET mto = TRUE, role = 'employee' WHERE role = 'mto'`);
@@ -158,7 +191,7 @@ const localDate = (value = new Date()) => {
 };
 
 async function readState() {
-  const [people, attendance, leave] = await Promise.all([
+  const [people, attendance, leave, tasks, taskComments, taskActivity] = await Promise.all([
     pool.query(
       `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, work_mode, officer, mto,
               reports_to, to_char(joined, 'YYYY-MM-DD') AS joined
@@ -172,6 +205,19 @@ async function readState() {
       `SELECT id, user_id, to_char(from_date, 'YYYY-MM-DD') AS from_date, to_char(to_date, 'YYYY-MM-DD') AS to_date,
               reason, status, rejection_reason
        FROM leave_requests ORDER BY from_date DESC`
+    ),
+    pool.query(
+      `SELECT id, title, brief, description, assignee_user_id, status, priority, created_by, created_at, updated_at,
+              completed_at, to_char(due_date, 'YYYY-MM-DD') AS due_date
+       FROM tasks ORDER BY updated_at DESC`
+    ),
+    pool.query(
+      `SELECT id, task_id, author_user_id, body, created_at
+       FROM task_comments ORDER BY created_at ASC`
+    ),
+    pool.query(
+      `SELECT id, task_id, actor_user_id, kind, detail, created_at
+       FROM task_activity ORDER BY created_at ASC`
     ),
   ]);
 
@@ -210,6 +256,35 @@ async function readState() {
       reason: row.reason,
       status: row.status,
       rejectionReason: row.rejection_reason || undefined,
+    })),
+    tasks: tasks.rows.map((row) => ({
+      id: row.id,
+      title: row.title,
+      brief: row.brief || "",
+      description: row.description || "",
+      assigneeUserId: row.assignee_user_id,
+      status: row.status,
+      priority: row.priority || "medium",
+      dueDate: row.due_date || undefined,
+      createdBy: row.created_by || "",
+      createdAt: new Date(row.created_at).toISOString(),
+      updatedAt: new Date(row.updated_at).toISOString(),
+      completedAt: row.completed_at ? new Date(row.completed_at).toISOString() : undefined,
+    })),
+    taskComments: taskComments.rows.map((row) => ({
+      id: row.id,
+      taskId: row.task_id,
+      authorUserId: row.author_user_id || "",
+      body: row.body,
+      createdAt: new Date(row.created_at).toISOString(),
+    })),
+    taskActivity: taskActivity.rows.map((row) => ({
+      id: row.id,
+      taskId: row.task_id,
+      actorUserId: row.actor_user_id || "",
+      kind: row.kind,
+      detail: row.detail || "",
+      createdAt: new Date(row.created_at).toISOString(),
     })),
   };
 }
@@ -955,6 +1030,231 @@ app.post("/api/leave/:id/review", async (req, res) => {
     `UPDATE leave_requests SET status = $2, rejection_reason = $3 WHERE id = $1`,
     [req.params.id, decision, decision === "rejected" ? note : null]
   );
+  res.json({ state: await readState() });
+});
+
+const TASK_STATUSES = new Set(["open", "in_progress", "done"]);
+const TASK_PRIORITIES = new Set(["low", "medium", "high"]);
+const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
+
+const taskStatusLabel = (status) => (status === "in_progress" ? "In progress" : status === "done" ? "Done" : "Open");
+const taskPriorityLabel = (priority) => priority.charAt(0).toUpperCase() + priority.slice(1);
+
+async function personRow(userId) {
+  const result = await pool.query(
+    `SELECT user_id, name, role, team, teams, active, officer, mto FROM people WHERE user_id = $1`,
+    [userId]
+  );
+  return result.rows[0] ?? null;
+}
+
+const isTaskAssignable = (row) => Boolean(row) && row.active && row.role !== "admin" && row.role !== "hr";
+
+const rowsShareTeam = (left, right) => rowTeams(left).some((team) => rowTeams(right).includes(team));
+
+const canAssignTasks = (who) => Boolean(who) && (who.role === "admin" || hasLeadRights(who));
+
+const canAssignTo = (who, person) => {
+  if (!isTaskAssignable(person)) return false;
+  if (who.role === "admin") return true;
+  if (!hasLeadRights(who)) return false;
+  return rowsShareTeam(who, person);
+};
+
+const isTaskOwner = (who, task) => who.role === "admin" || task.created_by === who.user_id;
+
+const canCommentOnTask = (who, task, assignee) =>
+  isTaskOwner(who, task) || who.user_id === task.assignee_user_id || (hasLeadRights(who) && rowsShareTeam(who, assignee));
+
+async function logActivity(taskId, actorId, kind, detail = "") {
+  await pool.query(
+    `INSERT INTO task_activity (id, task_id, actor_user_id, kind, detail) VALUES ($1,$2,$3,$4,$5)`,
+    [crypto.randomUUID(), taskId, actorId, kind, detail]
+  );
+}
+
+app.post("/api/tasks", async (req, res) => {
+  const who = await actor(req);
+  if (!canAssignTasks(who)) {
+    res.status(403).json({ error: "Only an admin, officer, team lead, or MTO can add a task." });
+    return;
+  }
+  const title = String(req.body.title || "").trim();
+  const brief = String(req.body.brief || "").trim();
+  const assigneeUserId = String(req.body.assigneeUserId || "").trim();
+  const priority = String(req.body.priority || "medium");
+  const dueDate = req.body.dueDate ? String(req.body.dueDate) : null;
+  if (!title) {
+    res.status(400).json({ error: "Enter a title." });
+    return;
+  }
+  if (!TASK_PRIORITIES.has(priority)) {
+    res.status(400).json({ error: "Choose a valid priority." });
+    return;
+  }
+  if (dueDate && !DATE_RE.test(dueDate)) {
+    res.status(400).json({ error: "Enter a valid due date." });
+    return;
+  }
+  const assignee = await personRow(assigneeUserId);
+  if (!canAssignTo(who, assignee)) {
+    res.status(400).json({
+      error: who.role === "admin" ? "Choose an active team member." : "You can only assign tasks to people on your team.",
+    });
+    return;
+  }
+  const id = crypto.randomUUID();
+  await pool.query(
+    `INSERT INTO tasks (id, title, brief, description, assignee_user_id, status, priority, due_date, created_by)
+     VALUES ($1,$2,$3,'',$4,'open',$5,$6,$7)`,
+    [id, title, brief, assigneeUserId, priority, dueDate, who.user_id]
+  );
+  await logActivity(id, who.user_id, "created", `Assigned to ${assignee.name}`);
+  res.json({ state: await readState(), taskId: id });
+});
+
+app.patch("/api/tasks/:id", async (req, res) => {
+  const who = await actor(req);
+  if (!who) {
+    res.status(401).json({ error: "Sign in to update a task." });
+    return;
+  }
+  const existing = await pool.query(`SELECT * FROM tasks WHERE id = $1`, [req.params.id]);
+  const task = existing.rows[0];
+  if (!task) {
+    res.status(404).json({ error: "Task not found." });
+    return;
+  }
+  const owner = isTaskOwner(who, task);
+  const assignee = who.user_id === task.assignee_user_id;
+  if (!owner && !assignee) {
+    res.status(403).json({ error: "You cannot update this task." });
+    return;
+  }
+  const body = req.body || {};
+  const touchesMeta =
+    body.title !== undefined ||
+    body.brief !== undefined ||
+    body.assigneeUserId !== undefined ||
+    body.priority !== undefined ||
+    body.dueDate !== undefined;
+  if (touchesMeta && !owner) {
+    res.status(403).json({ error: "You can only update the description and status." });
+    return;
+  }
+  if (body.description !== undefined && !assignee && !owner) {
+    res.status(403).json({ error: "Only the assignee can write the description." });
+    return;
+  }
+  if (!touchesMeta && body.description === undefined && body.status === undefined) {
+    res.status(400).json({ error: "Nothing to update." });
+    return;
+  }
+
+  const title = body.title === undefined ? task.title : String(body.title || "").trim();
+  const brief = body.brief === undefined ? task.brief : String(body.brief || "").trim();
+  const description = body.description === undefined ? task.description : String(body.description || "").trim();
+  const assigneeUserId = body.assigneeUserId === undefined ? task.assignee_user_id : String(body.assigneeUserId || "").trim();
+  const status = body.status === undefined ? task.status : String(body.status || "");
+  const priority = body.priority === undefined ? task.priority : String(body.priority || "");
+  const currentDue = task.due_date ? localDate(new Date(task.due_date)) : null;
+  const dueDate = body.dueDate === undefined ? currentDue : body.dueDate ? String(body.dueDate) : null;
+
+  if (!title) {
+    res.status(400).json({ error: "Enter a title." });
+    return;
+  }
+  if (!TASK_STATUSES.has(status)) {
+    res.status(400).json({ error: "Choose a valid status." });
+    return;
+  }
+  if (!TASK_PRIORITIES.has(priority)) {
+    res.status(400).json({ error: "Choose a valid priority." });
+    return;
+  }
+  if (dueDate && !DATE_RE.test(dueDate)) {
+    res.status(400).json({ error: "Enter a valid due date." });
+    return;
+  }
+  let newAssignee = null;
+  if (assigneeUserId !== task.assignee_user_id) {
+    newAssignee = await personRow(assigneeUserId);
+    if (!canAssignTo(who, newAssignee)) {
+      res.status(400).json({
+        error: who.role === "admin" ? "Choose an active team member." : "You can only assign tasks to people on your team.",
+      });
+      return;
+    }
+  }
+
+  const completedAt =
+    status === "done" ? (task.status === "done" && task.completed_at ? task.completed_at : new Date()) : null;
+
+  await pool.query(
+    `UPDATE tasks
+     SET title = $2, brief = $3, description = $4, assignee_user_id = $5, status = $6, priority = $7, due_date = $8,
+         completed_at = $9, updated_at = NOW()
+     WHERE id = $1`,
+    [task.id, title, brief, description, assigneeUserId, status, priority, dueDate, completedAt]
+  );
+
+  if (status !== task.status) await logActivity(task.id, who.user_id, "status", taskStatusLabel(status));
+  if (newAssignee) await logActivity(task.id, who.user_id, "reassigned", newAssignee.name);
+  if (priority !== task.priority) await logActivity(task.id, who.user_id, "priority", taskPriorityLabel(priority));
+  if (dueDate !== currentDue) await logActivity(task.id, who.user_id, "due", dueDate || "");
+  if (title !== task.title || brief !== task.brief) await logActivity(task.id, who.user_id, "edited", "");
+  if (description !== task.description) await logActivity(task.id, who.user_id, "description", "");
+
+  res.json({ state: await readState() });
+});
+
+app.post("/api/tasks/:id/comments", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role === "hr") {
+    res.status(403).json({ error: "You cannot comment on tasks." });
+    return;
+  }
+  const text = String(req.body.body || "").trim();
+  if (!text) {
+    res.status(400).json({ error: "Enter a comment." });
+    return;
+  }
+  const existing = await pool.query(`SELECT * FROM tasks WHERE id = $1`, [req.params.id]);
+  const task = existing.rows[0];
+  if (!task) {
+    res.status(404).json({ error: "Task not found." });
+    return;
+  }
+  const assignee = await personRow(task.assignee_user_id);
+  if (!canCommentOnTask(who, task, assignee)) {
+    res.status(403).json({ error: "Only the assignee, the person who assigned it, or a lead of that team can comment." });
+    return;
+  }
+  await pool.query(
+    `INSERT INTO task_comments (id, task_id, author_user_id, body) VALUES ($1,$2,$3,$4)`,
+    [crypto.randomUUID(), task.id, who.user_id, text]
+  );
+  await pool.query(`UPDATE tasks SET updated_at = NOW() WHERE id = $1`, [task.id]);
+  res.json({ state: await readState() });
+});
+
+app.delete("/api/tasks/:id", async (req, res) => {
+  const who = await actor(req);
+  if (!who) {
+    res.status(401).json({ error: "Sign in to delete a task." });
+    return;
+  }
+  const existing = await pool.query(`SELECT id, created_by FROM tasks WHERE id = $1`, [req.params.id]);
+  const task = existing.rows[0];
+  if (!task) {
+    res.status(404).json({ error: "Task not found." });
+    return;
+  }
+  if (!isTaskOwner(who, task)) {
+    res.status(403).json({ error: "Only an admin or the person who assigned the task can delete it." });
+    return;
+  }
+  await pool.query(`DELETE FROM tasks WHERE id = $1`, [task.id]);
   res.json({ state: await readState() });
 });
 

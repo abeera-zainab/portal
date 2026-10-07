@@ -9,6 +9,10 @@ import { HrShell } from "./admin/HrShell";
 import { AttendanceReport } from "./admin/AttendanceReport";
 import { LeaveInbox, TeamLeaveBoard } from "./LeaveReview";
 import { EmployeeDashboard } from "./EmployeeDashboard";
+import { TaskAnalytics, TasksHome } from "./tasks/TaskAnalytics";
+import { TaskDetail } from "./tasks/TaskDetail";
+import { TaskForm } from "./tasks/TaskForm";
+import { TaskList } from "./tasks/TaskList";
 import { TeamDashboard } from "./TeamDashboard";
 import { UserDetail } from "./admin/PersonDetail";
 import {
@@ -18,7 +22,9 @@ import {
   ReportIcon,
   LeaveNotifications,
   SideLink,
+  TasksIcon,
   TeamIcon,
+  useMyTaskCount,
 } from "./ShellChrome";
 import {
   attendanceHref,
@@ -72,6 +78,7 @@ export default function App() {
 }
 
 function StaffShell({ person }: { person: Person }) {
+  const taskCount = useMyTaskCount(person);
   return (
     <div className="admin-frame">
       <aside className="sidenav">
@@ -84,6 +91,9 @@ function StaffShell({ person }: { person: Person }) {
         <nav>
           <SideLink to="/" end icon={<DashboardIcon />}>
             Dashboard
+          </SideLink>
+          <SideLink to="/tasks" icon={<TasksIcon />} badge={taskCount}>
+            Tasks
           </SideLink>
           <SideLink to="/my-attendance" icon={<ReportIcon />}>
             My attendance
@@ -134,6 +144,11 @@ function StaffShell({ person }: { person: Person }) {
               path="/team"
               element={hasLeadRights(person) ? <TeamTools lead={person} /> : <Navigate to="/" replace />}
             />
+            <Route path="/tasks" element={<TasksHome person={person} />} />
+            <Route path="/tasks/list" element={<TaskList person={person} />} />
+            <Route path="/tasks/new" element={<TaskForm person={person} />} />
+            <Route path="/tasks/analytics" element={<TaskAnalytics person={person} />} />
+            <Route path="/tasks/:taskId" element={<TaskDetail person={person} />} />
             <Route path="/account" element={<AccountSettings person={person} />} />
             <Route path="/users/:userId" element={<UserDetail backTo="/team" backLabel="← Back to team" />} />
             <Route path="/attendance/:userId" element={<AttendanceReport />} />

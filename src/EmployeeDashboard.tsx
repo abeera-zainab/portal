@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
+import { MyTasksCard } from "./tasks/TaskCards";
 import type { Person } from "./types";
 import { monthTotals } from "./attendanceStats";
 import { attendanceStatus, formatClock, personTeams, teamName, todayKey, useDatabase } from "./store";
@@ -184,6 +185,8 @@ export function EmployeeDashboard({ person }: { person: Person }) {
           </div>
         </article>
       </div>
+
+      <MyTasksCard person={person} />
     </>
   );
 }

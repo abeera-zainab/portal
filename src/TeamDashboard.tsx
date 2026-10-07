@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
 import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
+import { TaskOverviewCard } from "./tasks/TaskCards";
 import type { Person, TeamId } from "./types";
 import { monthTotals } from "./attendanceStats";
 import {
@@ -327,6 +328,8 @@ export function TeamDashboard({ lead }: { lead: Person }) {
           </table>
         </div>
       </article>
+
+      <TaskOverviewCard person={lead} />
 
       {focus ? (
         <article className="card roster">

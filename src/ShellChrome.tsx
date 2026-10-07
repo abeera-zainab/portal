@@ -1,18 +1,20 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, NavLink } from "react-router-dom";
-import type { Person } from "./types";
-import { canReviewLeave, hasLeadRights, hasOfficerRank, hasTeamLeadRank, isOfficer, useDatabase } from "./store";
+import type { Database, Person } from "./types";
+import { canReviewLeave, hasLeadRights, hasOfficerRank, hasTeamLeadRank, isOfficer, isTaskOverdue, useDatabase } from "./store";
 
 export function SideLink({
   to,
   end,
   icon,
+  badge,
   children,
 }: {
   to: string;
   end?: boolean;
   icon: ReactNode;
+  badge?: number;
   children: ReactNode;
 }) {
   return (
@@ -21,15 +23,24 @@ export function SideLink({
         {icon}
       </span>
       {children}
+      {badge ? <span className="nav-count">{badge}</span> : null}
     </NavLink>
   );
+}
+
+/** Open and in-progress tasks assigned to this person. Overdue ones are counted too, so the badge reads as "needs attention". */
+export function useMyTaskCount(person: Person) {
+  const db = useDatabase();
+  return db.tasks.filter((task) => task.assigneeUserId === person.userId && task.status !== "done").length;
 }
 
 export function LeaveNotifications({ person }: { person: Person }) {
   const db = useDatabase();
   const [open, setOpen] = useState(false);
   const wrap = useRef<HTMLDivElement>(null);
-  const items = leaveAlerts(person, db.people, db.leave);
+  const leaveItems = leaveAlerts(person, db.people, db.leave);
+  const taskItems = taskAlerts(person, db);
+  const items = [...leaveItems, ...taskItems];
 
   useEffect(() => {
     if (!open) return;
@@ -45,7 +56,7 @@ export function LeaveNotifications({ person }: { person: Person }) {
       <button
         type="button"
         className={open ? "nav-note on" : "nav-note"}
-        aria-label="Leave notifications"
+        aria-label="Notifications"
         aria-expanded={open}
         onClick={() => setOpen((current) => !current)}
       >
@@ -54,13 +65,26 @@ export function LeaveNotifications({ person }: { person: Person }) {
         {items.length ? <span className="note-badge">{items.length}</span> : null}
       </button>
       {open ? (
-        <div className="note-panel" role="region" aria-label="Leave notifications">
+        <div className="note-panel" role="region" aria-label="Notifications">
           <strong>Leave</strong>
-          {items.length === 0 ? (
+          {leaveItems.length === 0 ? (
             <p className="muted">No leave notifications.</p>
           ) : (
             <div className="note-list">
-              {items.map((item) => (
+              {leaveItems.map((item) => (
+                <Link key={item.id} className="note-item" to={item.href} onClick={() => setOpen(false)}>
+                  <span>{item.title}</span>
+                  <small>{item.detail}</small>
+                </Link>
+              ))}
+            </div>
+          )}
+          <strong style={{ display: "block", marginTop: 12 }}>Tasks</strong>
+          {taskItems.length === 0 ? (
+            <p className="muted">No task notifications.</p>
+          ) : (
+            <div className="note-list">
+              {taskItems.map((item) => (
                 <Link key={item.id} className="note-item" to={item.href} onClick={() => setOpen(false)}>
                   <span>{item.title}</span>
                   <small>{item.detail}</small>
@@ -86,6 +110,62 @@ export function AccountSettingsButton() {
       <GearIcon />
     </NavLink>
   );
+}
+
+const RECENT_DAYS = 7;
+
+const isRecent = (iso: string) => Date.now() - new Date(iso).getTime() < RECENT_DAYS * 86_400_000;
+
+const shortWhen = (iso: string) =>
+  new Date(iso).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
+
+function taskAlerts(person: Person, db: Database) {
+  if (person.role === "hr") return [];
+  const items: { id: string; title: string; detail: string; href: string }[] = [];
+  const nameOf = (userId: string) => db.people.find((item) => item.userId === userId)?.name ?? "Someone";
+
+  for (const task of db.tasks) {
+    const href = `/tasks/${task.id}`;
+    const mine = task.assigneeUserId === person.userId;
+    const owner = task.createdBy === person.userId;
+
+    if (mine && task.status !== "done" && isTaskOverdue(task)) {
+      items.push({ id: `overdue-${task.id}`, title: `Overdue: ${task.title}`, detail: `Was due ${task.dueDate}`, href });
+    } else if (mine && task.status === "open" && !task.description && isRecent(task.createdAt)) {
+      items.push({
+        id: `new-${task.id}`,
+        title: `New task assigned to you: ${task.title}`,
+        detail: `From ${nameOf(task.createdBy)} · ${shortWhen(task.createdAt)}`,
+        href,
+      });
+    }
+
+    if (owner && !mine && task.status === "done" && task.completedAt && isRecent(task.completedAt)) {
+      items.push({
+        id: `done-${task.id}`,
+        title: `${nameOf(task.assigneeUserId)} marked a task done`,
+        detail: `${task.title} · ${shortWhen(task.completedAt)}`,
+        href,
+      });
+    }
+  }
+
+  for (const comment of db.taskComments) {
+    if (comment.authorUserId === person.userId || !isRecent(comment.createdAt)) continue;
+    const task = db.tasks.find((item) => item.id === comment.taskId);
+    if (!task) continue;
+    const mine = task.assigneeUserId === person.userId;
+    const owner = task.createdBy === person.userId;
+    if (!mine && !owner) continue;
+    items.push({
+      id: `comment-${comment.id}`,
+      title: `${nameOf(comment.authorUserId)} commented on ${mine ? "your task" : "a task you assigned"}`,
+      detail: `${task.title} · ${shortWhen(comment.createdAt)}`,
+      href: `/tasks/${task.id}`,
+    });
+  }
+
+  return items;
 }
 
 function leaveAlerts(
@@ -219,6 +299,15 @@ export function LeaveIcon() {
     <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
       <path d="M7 4h8l4 4v12a1 1 0 0 1-1 1H7a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z" />
       <path d="M15 4v4h4M8 13h8M8 17h5" />
+    </svg>
+  );
+}
+
+export function TasksIcon() {
+  return (
+    <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <path d="M8 7h11M8 12h11M8 17h11" />
+      <path d="M4.5 7h.5M4.5 12h.5M4.5 17h.5" />
     </svg>
   );
 }

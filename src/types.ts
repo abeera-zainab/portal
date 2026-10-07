@@ -42,8 +42,57 @@ export interface LeaveRequest {
   rejectionReason?: string;
 }
 
+export type TaskStatus = "open" | "in_progress" | "done";
+
+export type TaskPriority = "low" | "medium" | "high";
+
+export interface Task {
+  id: string;
+  title: string;
+  brief: string;
+  description: string;
+  assigneeUserId: string;
+  status: TaskStatus;
+  priority: TaskPriority;
+  dueDate?: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface TaskComment {
+  id: string;
+  taskId: string;
+  authorUserId: string;
+  body: string;
+  createdAt: string;
+}
+
+export type TaskActivityKind =
+  | "created"
+  | "status"
+  | "reassigned"
+  | "priority"
+  | "due"
+  | "edited"
+  | "description"
+  | "comment";
+
+export interface TaskActivity {
+  id: string;
+  taskId: string;
+  actorUserId: string;
+  kind: TaskActivityKind;
+  detail: string;
+  createdAt: string;
+}
+
 export interface Database {
   people: Person[];
   attendance: AttendanceRecord[];
   leave: LeaveRequest[];
+  tasks: Task[];
+  taskComments: TaskComment[];
+  taskActivity: TaskActivity[];
 }

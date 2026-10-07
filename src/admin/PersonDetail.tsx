@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useParams } from "react-router-dom";
 import type { Person, WorkMode } from "../types";
+import { PersonTasksCard } from "../tasks/TaskCards";
 import {
   attendanceHref,
   attendanceStatus,
@@ -436,6 +437,7 @@ export function UserDetail({ backTo, backLabel }: { backTo: string; backLabel: s
       </header>
       <AccountCard person={person} />
       <PersonAdjust person={person} />
+      <PersonTasksCard person={person} viewer={session} />
     </section>
   );
 }

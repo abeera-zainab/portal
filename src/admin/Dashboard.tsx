@@ -16,6 +16,7 @@ import {
 import type { Person, TeamId } from "../types";
 import { AttendanceCard } from "../AttendanceCard";
 import { ATTENDANCE_BARS, PeriodChart } from "../PeriodChart";
+import { TaskOverviewCard } from "../tasks/TaskCards";
 import {
   TEAMS,
   attendanceHref,
@@ -342,6 +343,8 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
           <PeriodChart data={stats.trend} bars={ATTENDANCE_BARS} trendKey="present" trendName="Present trend" />
         </div>
       </article>
+
+      {session && !viewer ? <TaskOverviewCard person={session} /> : null}
 
       {focus ? (
         <article className="card roster">

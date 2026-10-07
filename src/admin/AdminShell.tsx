@@ -1,6 +1,10 @@
 import { Navigate, Route, Routes } from "react-router-dom";
 import { AccountSettings } from "../AccountSettings";
 import { LeavePage } from "../LeaveReview";
+import { TaskAnalytics, TasksHome } from "../tasks/TaskAnalytics";
+import { TaskDetail } from "../tasks/TaskDetail";
+import { TaskForm } from "../tasks/TaskForm";
+import { TaskList } from "../tasks/TaskList";
 import {
   AccountSettingsButton,
   DashboardIcon,
@@ -9,6 +13,7 @@ import {
   PeopleIcon,
   ReportIcon,
   SideLink,
+  TasksIcon,
 } from "../ShellChrome";
 import { logout, useSession } from "../store";
 import { AttendanceList } from "./AttendanceList";
@@ -33,6 +38,9 @@ export function AdminShell() {
         <nav>
           <SideLink to="/dashboard" end icon={<DashboardIcon />}>
             Dashboard
+          </SideLink>
+          <SideLink to="/tasks" icon={<TasksIcon />}>
+            Tasks
           </SideLink>
           <SideLink to="/my-attendance" icon={<ReportIcon />}>
             My attendance
@@ -76,6 +84,11 @@ export function AdminShell() {
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/:userId" element={<AttendanceReport />} />
             <Route path="/leave" element={<LeavePage />} />
+            <Route path="/tasks" element={<TasksHome person={session} />} />
+            <Route path="/tasks/list" element={<TaskList person={session} />} />
+            <Route path="/tasks/new" element={<TaskForm person={session} />} />
+            <Route path="/tasks/analytics" element={<TaskAnalytics person={session} />} />
+            <Route path="/tasks/:taskId" element={<TaskDetail person={session} />} />
             <Route path="/account" element={<AccountSettings person={session} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

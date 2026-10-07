@@ -1,5 +1,5 @@
 import { useSyncExternalStore } from "react";
-import type { Database, LeaveRequest, Person, Role, TeamId, WorkMode } from "./types";
+import type { Database, LeaveRequest, Person, Role, Task, TaskPriority, TaskStatus, TeamId, WorkMode } from "./types";
 
 export const TEAMS: { id: TeamId; name: string }[] = [
   { id: "offensive", name: "Offensive" },
@@ -11,7 +11,7 @@ export const TEAMS: { id: TeamId; name: string }[] = [
 const SESSION_KEY = "pss-attendance-session";
 const TOKEN_KEY = "pss-attendance-token";
 
-const empty = (): Database => ({ people: [], attendance: [], leave: [] });
+const empty = (): Database => ({ people: [], attendance: [], leave: [], tasks: [], taskComments: [], taskActivity: [] });
 
 let database: Database = empty();
 let sessionUserId: string | null = sessionStorage.getItem(SESSION_KEY);
@@ -380,6 +380,88 @@ export const reviewLeave = async (
 
 export const deleteLeave = async (requestId: string) => {
   await mutate(`/api/leave/${requestId}`, "DELETE");
+};
+
+// Task permissions. The server applies the same rules.
+
+export const canUseTasks = (person: Person | null) => Boolean(person && person.role !== "hr");
+
+export const canAssignTasks = (person: Person | null) => Boolean(person && (person.role === "admin" || hasLeadRights(person)));
+
+export const isTaskAssignable = (person: Person) => isPersonActive(person) && person.role !== "admin" && person.role !== "hr";
+
+export const canAssignTo = (assigner: Person, person: Person) => {
+  if (!isTaskAssignable(person)) return false;
+  if (assigner.role === "admin") return true;
+  if (!hasLeadRights(assigner)) return false;
+  return sharesTeam(assigner, person);
+};
+
+export const assignableFor = (assigner: Person, people: Person[]) =>
+  people.filter((person) => canAssignTo(assigner, person)).sort((a, b) => a.name.localeCompare(b.name));
+
+export const isTaskOwner = (person: Person, task: Task) => person.role === "admin" || task.createdBy === person.userId;
+
+export const canEditTask = (person: Person | null, task: Task) => Boolean(person && isTaskOwner(person, task));
+
+export const canWorkTask = (person: Person | null, task: Task) => Boolean(person && task.assigneeUserId === person.userId);
+
+export const canDeleteTask = (person: Person | null, task: Task) => Boolean(person && isTaskOwner(person, task));
+
+export const leadsTeamOf = (lead: Person, assignee: Person | undefined) =>
+  Boolean(assignee && hasLeadRights(lead) && sharesTeam(lead, assignee));
+
+export const canCommentOnTask = (person: Person | null, task: Task, people: Person[]) => {
+  if (!person) return false;
+  if (isTaskOwner(person, task) || canWorkTask(person, task)) return true;
+  const assignee = people.find((item) => item.userId === task.assigneeUserId);
+  return leadsTeamOf(person, assignee);
+};
+
+export const canViewTask = (person: Person | null, task: Task, people: Person[]) => {
+  if (!person || person.role === "hr") return false;
+  if (isTaskOwner(person, task) || canWorkTask(person, task)) return true;
+  const assignee = people.find((item) => item.userId === task.assigneeUserId);
+  return Boolean(assignee && sharesTeam(person, assignee));
+};
+
+export const visibleTasks = (person: Person | null, tasks: Task[], people: Person[]) =>
+  tasks.filter((task) => canViewTask(person, task, people));
+
+export const isTaskOverdue = (task: Task, day = todayKey()) =>
+  Boolean(task.dueDate && task.status !== "done" && task.dueDate < day);
+
+export const createTask = async (input: {
+  title: string;
+  brief?: string;
+  assigneeUserId: string;
+  priority?: TaskPriority;
+  dueDate?: string;
+}) => {
+  await mutate("/api/tasks", "POST", input);
+};
+
+export const updateTask = async (
+  taskId: string,
+  input: {
+    title?: string;
+    brief?: string;
+    description?: string;
+    assigneeUserId?: string;
+    status?: TaskStatus;
+    priority?: TaskPriority;
+    dueDate?: string | null;
+  }
+) => {
+  await mutate(`/api/tasks/${encodeURIComponent(taskId)}`, "PATCH", input);
+};
+
+export const commentOnTask = async (taskId: string, body: string) => {
+  await mutate(`/api/tasks/${encodeURIComponent(taskId)}/comments`, "POST", { body });
+};
+
+export const deleteTask = async (taskId: string) => {
+  await mutate(`/api/tasks/${encodeURIComponent(taskId)}`, "DELETE");
 };
 
 export const createPerson = async (input: {
