@@ -1,7 +1,7 @@
 import express from "express";
 import pg from "pg";
 import EmbeddedPostgres from "embedded-postgres";
-import { createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -183,23 +183,33 @@ await pool.query(
    ON CONFLICT (user_id) DO NOTHING`
 );
 
+// The bundled snapshot (server/seed.sql, refreshed with `npm run seed:export`) is applied whenever
+// its contents change, so pulling a new commit and restarting brings the server's data up to date.
+// Every statement in it is an upsert or insert-if-missing, so rows written on the server are kept.
 await pool.query(`CREATE TABLE IF NOT EXISTS app_meta (key TEXT PRIMARY KEY, value TEXT NOT NULL)`);
-const bundledSeed = await pool.query(`SELECT 1 FROM app_meta WHERE key = 'bundled_seed'`);
 const seedPath = path.join(__dirname, "seed.sql");
-if (!bundledSeed.rowCount && existsSync(seedPath)) {
+if (existsSync(seedPath)) {
   const seedSql = readFileSync(seedPath, "utf8");
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    await client.query(seedSql);
-    await client.query(`INSERT INTO app_meta (key, value) VALUES ('bundled_seed', '1')`);
-    await client.query("COMMIT");
-    console.log("Loaded the bundled database.");
-  } catch (error) {
-    await client.query("ROLLBACK");
-    throw error;
-  } finally {
-    client.release();
+  const seedHash = createHash("sha256").update(seedSql).digest("hex");
+  const applied = await pool.query(`SELECT value FROM app_meta WHERE key = 'bundled_seed'`);
+  if (applied.rows[0]?.value !== seedHash) {
+    const client = await pool.connect();
+    try {
+      await client.query("BEGIN");
+      await client.query(seedSql);
+      await client.query(
+        `INSERT INTO app_meta (key, value) VALUES ('bundled_seed', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [seedHash]
+      );
+      await client.query("COMMIT");
+      console.log("Loaded the bundled database.");
+    } catch (error) {
+      await client.query("ROLLBACK");
+      throw error;
+    } finally {
+      client.release();
+    }
   }
 }
 

@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "concurrently -n api,web \"node server/index.mjs\" \"vite\"",
     "server": "node server/index.mjs",
+    "seed:export": "node server/export-seed.mjs",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
     "preview": "vite preview"

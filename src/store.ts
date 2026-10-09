@@ -103,7 +103,11 @@ const mutate = async (path: string, method: string, body?: unknown) => {
     ready = true;
     emit();
   }
-  if (!response.ok) throw new Error(payload.error || "Database request failed.");
+  if (!response.ok) {
+    if (payload.error) throw new Error(payload.error);
+    if (response.status === 404) throw new Error("The server does not know this request yet. Restart the API with the latest code.");
+    throw new Error(`Database request failed (${response.status}).`);
+  }
   if (payload.state) applyState(payload.state);
   return payload;
 };
