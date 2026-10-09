@@ -38,11 +38,14 @@ export function assignedPlaceTags(person: Person) {
   return tags;
 }
 
-export function AssignedTags({ person }: { person: Person }) {
+export function AssignedTags({ person, showToday = true }: { person: Person; showToday?: boolean }) {
   const db = useDatabase();
   const roles = roleTags(person).filter((tag) => tag.id === "officer" || tag.id === "team_lead" || tag.id === "mto");
   const places = assignedPlaceTags(person);
-  const status = person.role === "admin" ? null : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
+  const status =
+    person.role === "admin" || !showToday
+      ? null
+      : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
   const onLeave = status === "leave";
   const lateToday = status === "late";
   const absenteeToday = status === "absentee";

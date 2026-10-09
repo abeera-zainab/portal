@@ -7,9 +7,6 @@ import {
   TEAMS,
   createPerson,
   deletePerson,
-  attendanceStatus,
-  dayStatusClass,
-  dayStatusLabel,
   isPersonActive,
   personTeams,
   setPersonRole,
@@ -231,7 +228,6 @@ export function UserManagement() {
               <th>Email</th>
               <th>Role</th>
               <th>Teams</th>
-              <th>Status</th>
               <th>Joined</th>
               <th>Actions</th>
             </tr>
@@ -239,7 +235,7 @@ export function UserManagement() {
           <tbody>
             {people.length === 0 ? (
               <tr>
-                <td colSpan={9}>No people match this view.</td>
+                <td colSpan={8}>No people match this view.</td>
               </tr>
             ) : (
               people.map((person) => (
@@ -281,10 +277,7 @@ function UserRow({
   onTeam: (team: TeamId) => void;
   onDelete: () => void;
 }) {
-  const db = useDatabase();
-  const active = isPersonActive(person);
   const teams = personTeams(person);
-  const today = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
 
   return (
     <tr>
@@ -295,7 +288,7 @@ function UserRow({
             <Link className="name-btn" to={`/users/${person.userId}`}>
               {person.name}
             </Link>
-            <AssignedTags person={person} />
+            <AssignedTags person={person} showToday={false} />
           </div>
         </div>
       </td>
@@ -329,17 +322,6 @@ function UserRow({
               </button>
             ))}
           </div>
-        )}
-      </td>
-      <td>
-        {person.role !== "admin" ? (
-          today === "weekend" ? (
-            "—"
-          ) : (
-            <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>
-          )
-        ) : (
-          <span className={active ? "status on" : "status off"}>{active ? "Active" : "Inactive"}</span>
         )}
       </td>
       <td>{formatJoined(person.joined)}</td>
