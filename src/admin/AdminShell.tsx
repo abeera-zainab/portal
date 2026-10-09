@@ -42,14 +42,14 @@ export function AdminShell() {
           <SideLink to="/tasks" icon={<TasksIcon />}>
             Tasks
           </SideLink>
+          <SideLink to="/attendance" icon={<ReportIcon />}>
+            Attendance report
+          </SideLink>
           <SideLink to="/my-attendance" icon={<ReportIcon />}>
             My attendance
           </SideLink>
           <SideLink to="/users" icon={<PeopleIcon />}>
             User management
-          </SideLink>
-          <SideLink to="/attendance" icon={<ReportIcon />}>
-            Attendance report
           </SideLink>
           <SideLink to="/leave" end icon={<LeaveIcon />}>
             Leave

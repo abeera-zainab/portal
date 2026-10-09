@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
-import { Bar, BarChart, CartesianGrid, Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
+import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAxis, YAxis } from "recharts";
 import type { Person } from "../types";
 import { PeriodChart } from "../PeriodChart";
 import type { PeriodBar } from "../PeriodChart";
@@ -54,21 +54,23 @@ export function TaskAnalytics({ person }: { person: Person }) {
     [db.people, admin, person]
   );
   const byPerson = useMemo(() => tasksByPerson(scope, roster), [scope, roster]);
+  const personBars = useMemo(
+    () =>
+      [...byPerson]
+        .sort((a, b) => b.assigned - a.assigned || a.person.name.localeCompare(b.person.name))
+        .map((row) => ({
+          userId: row.person.userId,
+          name: row.person.name,
+          total: row.assigned,
+          done: row.done,
+          overdue: row.overdue,
+          inProgress: row.inProgress,
+        })),
+    [byPerson]
+  );
   const trend = useMemo(() => taskTrend(scope, range), [scope, range]);
 
   if (!canAssignTasks(person)) return <Navigate to="/tasks/list" replace />;
-
-  const statusMix = [
-    { name: "Open", value: summary.open, color: MUTED, status: "open" },
-    { name: "In progress", value: summary.inProgress, color: AMBER, status: "in_progress" },
-    { name: "Done", value: summary.done, color: GREEN, status: "done" },
-  ].filter((slice) => slice.value > 0);
-
-  const priorityMix = [
-    { name: "High", value: summary.high, color: RED },
-    { name: "Medium", value: summary.medium, color: AMBER },
-    { name: "Low", value: summary.low, color: LEAVE },
-  ].filter((slice) => slice.value > 0);
 
   const goTo = (query: Record<string, string>) => {
     const params = new URLSearchParams(admin ? { view: "all" } : { view: "team" });
@@ -81,10 +83,6 @@ export function TaskAnalytics({ person }: { person: Person }) {
       <div className="manage-head">
         <div>
           <h1>Tasks</h1>
-          <p className="muted">
-            {admin ? "Every task across the teams." : `Tasks for ${teams.map((team) => TEAMS.find((item) => item.id === team)?.name ?? team).join(" and ")}.`}{" "}
-            Click a chart to open those tasks.
-          </p>
         </div>
         <div className="filters">
           <Link className="btn secondary" to={`/tasks/list?view=${admin ? "all" : "team"}`}>
@@ -131,37 +129,34 @@ export function TaskAnalytics({ person }: { person: Person }) {
         </article>
       </div>
 
-      <div className="dash-charts">
-        <article className="card">
-          <h2>By status</h2>
-          <p className="muted">Share of tasks in each state.</p>
-          <div className="chart-box">
-            {summary.total === 0 ? (
-              <p className="muted chart-empty">No tasks yet.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie
-                    data={statusMix}
-                    dataKey="value"
-                    nameKey="name"
-                    innerRadius={62}
-                    outerRadius={92}
-                    paddingAngle={3}
-                    onClick={(slice) => goTo({ status: String((slice as { status?: string }).status ?? "") })}
-                  >
-                    {statusMix.map((slice) => (
-                      <Cell key={slice.name} fill={slice.color} cursor="pointer" />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
-          </div>
-        </article>
+      <article className="card">
+        <h2>Tasks per person</h2>
+        <p className="muted">
+          Total given, completed, overdue, and in progress for everyone with a task.
+          {admin ? " Click a bar to open that person's tasks." : ""}
+        </p>
+        <div className="chart-box" style={{ height: Math.max(240, personBars.length * 48 + 60) }}>
+          {personBars.length === 0 ? (
+            <p className="muted chart-empty">No tasks assigned yet.</p>
+          ) : (
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={personBars} layout="vertical" margin={{ left: 8, right: 24 }} barCategoryGap={14} barGap={2}>
+                <CartesianGrid stroke="#e4d9c8" horizontal={false} />
+                <XAxis type="number" allowDecimals={false} tick={{ fill: "#6d645b", fontSize: 12 }} />
+                <YAxis type="category" dataKey="name" width={140} tick={{ fill: "#1c1915", fontSize: 12 }} />
+                <Tooltip contentStyle={tooltipStyle} cursor={{ fill: "#f7f2e8" }} />
+                <Legend />
+                <Bar dataKey="total" name="Total given" fill={LEAVE} radius={[0, 4, 4, 0]} cursor={admin ? "pointer" : undefined} onClick={(bar) => admin && goTo({ person: bar.payload.userId })} />
+                <Bar dataKey="done" name="Completed" fill={GREEN} radius={[0, 4, 4, 0]} cursor={admin ? "pointer" : undefined} onClick={(bar) => admin && goTo({ person: bar.payload.userId, status: "done" })} />
+                <Bar dataKey="overdue" name="Overdue" fill={RED} radius={[0, 4, 4, 0]} cursor={admin ? "pointer" : undefined} onClick={(bar) => admin && goTo({ person: bar.payload.userId, overdue: "1" })} />
+                <Bar dataKey="inProgress" name="In progress" fill={AMBER} radius={[0, 4, 4, 0]} cursor={admin ? "pointer" : undefined} onClick={(bar) => admin && goTo({ person: bar.payload.userId, status: "in_progress" })} />
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+      </article>
 
+      <div className="dash-charts">
         <article className="card">
           <h2>By team</h2>
           <p className="muted">Open, in progress, and done per team. Click a bar to open those tasks.</p>
@@ -178,30 +173,6 @@ export function TaskAnalytics({ person }: { person: Person }) {
                 <Bar dataKey="done" name="Done" stackId="s" fill={GREEN} cursor="pointer" radius={[6, 6, 0, 0]} onClick={(bar) => goTo({ team: bar.payload.teamId, status: "done" })} />
               </BarChart>
             </ResponsiveContainer>
-          </div>
-        </article>
-      </div>
-
-      <div className="dash-charts">
-        <article className="card">
-          <h2>By priority</h2>
-          <p className="muted">How work is weighted right now.</p>
-          <div className="chart-box">
-            {summary.total === 0 ? (
-              <p className="muted chart-empty">No tasks yet.</p>
-            ) : (
-              <ResponsiveContainer width="100%" height="100%">
-                <PieChart>
-                  <Pie data={priorityMix} dataKey="value" nameKey="name" innerRadius={62} outerRadius={92} paddingAngle={3} onClick={(slice) => goTo({ priority: String(slice.name).toLowerCase() })}>
-                    {priorityMix.map((slice) => (
-                      <Cell key={slice.name} fill={slice.color} cursor="pointer" />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={tooltipStyle} />
-                  <Legend />
-                </PieChart>
-              </ResponsiveContainer>
-            )}
           </div>
         </article>
 

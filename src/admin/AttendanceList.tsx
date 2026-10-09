@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Link } from "react-router-dom";
 import type { Database, Person } from "../types";
 import { attendanceTotals } from "../attendanceStats";
@@ -213,6 +213,22 @@ export function AttendanceList() {
     .sort((a, b) => a.name.localeCompare(b.name));
   const reportPeople = people.filter((person) => person.role !== "hr" && person.role !== "admin");
 
+  // Head count for the selected day, recomputed whenever the day or the data changes.
+  const dayCounts = useMemo(() => {
+    const when = new Date(`${reportDay}T12:00:00`);
+    const counts = { present: 0, late: 0, absent: 0, leave: 0, staff: 0, weekend: isWeekend(reportDay) };
+    for (const person of reportPeople) {
+      if (person.joined && reportDay < person.joined) continue;
+      counts.staff += 1;
+      const status = attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+      if (status === "on_time") counts.present += 1;
+      else if (status === "late") counts.late += 1;
+      else if (status === "leave") counts.leave += 1;
+      else if (status === "not_in" || status === "absentee") counts.absent += 1;
+    }
+    return counts;
+  }, [reportPeople, reportDay, db.attendance, db.leave]);
+
   return (
     <section className="manage">
       <div className="manage-head">
@@ -256,6 +272,28 @@ export function AttendanceList() {
           ) : null}
         </form>
       </div>
+      <div className="dash-stats">
+        <article className="card stat">
+          <span>Total team</span>
+          <strong>{dayCounts.staff}</strong>
+        </article>
+        <article className="card stat">
+          <span>Present</span>
+          <strong className="tone-green">{dayCounts.weekend ? "—" : dayCounts.present}</strong>
+        </article>
+        <article className="card stat">
+          <span>Late</span>
+          <strong className="tone-amber">{dayCounts.weekend ? "—" : dayCounts.late}</strong>
+        </article>
+        <article className="card stat">
+          <span>Absent</span>
+          <strong className="tone-absent">{dayCounts.weekend ? "—" : dayCounts.absent}</strong>
+        </article>
+        <article className="card stat">
+          <span>On leave</span>
+          <strong className="tone-leave">{dayCounts.weekend ? "—" : dayCounts.leave}</strong>
+        </article>
+      </div>
       <div className="table-card">
         <table className="report-table">
           <thead>
@@ -264,9 +302,9 @@ export function AttendanceList() {
               <th>Check in</th>
               <th>Check out</th>
               <th>Status</th>
-              <th>Present</th>
-              <th>Absent</th>
-              <th>Late</th>
+              <th>T. Present</th>
+              <th>T. Absent</th>
+              <th>T. Late</th>
             </tr>
           </thead>
           <tbody>

@@ -152,16 +152,28 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
       <div className="task-sheet">
         <table>
           <thead>
-            <tr>
-              <th className="sheet-sn">S.N</th>
-              <th className="sheet-team">Team</th>
-              <th className="sheet-owner">Owner</th>
-              <th className="sheet-item">Items</th>
+            <tr className="sheet-band">
+              <th rowSpan={2} className="sheet-sn">
+                S.N
+              </th>
+              <th rowSpan={2} className="sheet-team">
+                Team
+              </th>
+              <th rowSpan={2} className="sheet-owner">
+                Owner
+              </th>
+              <th rowSpan={2} className="sheet-item">
+                Items
+              </th>
               {days.map((day, index) => (
-                <SheetHeads key={day} day={day} today={today} first={index === 0} />
+                <th key={day} colSpan={2} className={`sheet-group sheet-group-start${day === today ? " today" : ""}`}>
+                  <span className="sheet-group-step">{index === 0 ? "Round 1" : `Round ${index + 1}`}</span>
+                  {formatDay(day)}
+                  {day === today ? <span className="sheet-group-today">Today</span> : null}
+                </th>
               ))}
               {adminHere ? (
-                <th className="sheet-add">
+                <th rowSpan={2} className="sheet-add sheet-group-start">
                   {picking ? (
                     <div className="sheet-add-form">
                       <input
@@ -200,6 +212,11 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                   )}
                 </th>
               ) : null}
+            </tr>
+            <tr className="sheet-subrow">
+              {days.map((day, index) => (
+                <SheetHeads key={day} day={day} today={today} first={index === 0} />
+              ))}
             </tr>
           </thead>
           <tbody>
@@ -257,7 +274,7 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                         comments={cells.get(`${task.id}|${day}|comment`) ?? []}
                       />
                     ))}
-                    {adminHere ? <td className="sheet-add" /> : null}
+                    {adminHere ? <td className="sheet-add sheet-group-start" /> : null}
                   </tr>
                 );
               })
@@ -269,14 +286,14 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
   );
 }
 
-/** Header pair for one review date, worded like the status-tracker spreadsheet. */
+/** Column roles under one review date, worded like the status-tracker spreadsheet. */
 function SheetHeads({ day, today, first }: { day: string; today: string; first: boolean }) {
-  const className = day === today ? "sheet-day today" : "sheet-day";
+  const className = day === today ? "sheet-sub today" : "sheet-sub";
   const label = first ? "Response by Task Owner" : "Status by Task Owner";
   return (
     <>
-      <th className={className}>
-        {label} ({shortDay(day)})
+      <th className={`${className} sheet-group-start`}>
+        {label} <span className="sheet-sub-date">({shortDay(day)})</span>
       </th>
       <th className={className}>Comments by CISO</th>
     </>
@@ -306,7 +323,7 @@ function SheetDayCells({
   const className = day === today ? "sheet-cell-wrap today" : "sheet-cell-wrap";
   return (
     <>
-      <td className={className}>
+      <td className={`${className} sheet-group-start`}>
         <SheetCell
           task={task}
           day={day}

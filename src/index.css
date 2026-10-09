@@ -441,8 +441,23 @@ textarea { min-height: 84px; resize: vertical; }
 .task-sheet th, .task-sheet td { vertical-align: top; border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 10px; }
 .task-sheet th:last-child, .task-sheet td:last-child { border-right: 0; }
 .task-sheet thead th { background: #f7f2e8; position: sticky; top: 0; z-index: 2; white-space: nowrap; vertical-align: middle; }
-.task-sheet .sheet-day { text-transform: none; letter-spacing: 0; font-size: 12px; font-weight: 700; color: var(--ink); white-space: normal; }
-.task-sheet .sheet-day.today { background: var(--green-soft); color: var(--green); }
+/* Top band: dark, one cell per review date, so each round reads as its own block. */
+.task-sheet .sheet-band th { background: #1d3b2e; color: #fff; border-right-color: #2f5443; border-bottom-color: #2f5443; }
+.task-sheet .sheet-band .sheet-sn, .task-sheet .sheet-band .sheet-team, .task-sheet .sheet-band .sheet-owner, .task-sheet .sheet-band .sheet-item { background: #1d3b2e; color: #fff; }
+.task-sheet .sheet-band .sheet-add { background: #1d3b2e; }
+.task-sheet .sheet-group { text-align: center; text-transform: none; letter-spacing: 0.01em; font-size: 13px; font-weight: 700; padding: 8px 12px; }
+.task-sheet .sheet-group.today { background: var(--green); }
+.sheet-group-step { display: block; font-size: 10px; font-weight: 600; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.7; margin-bottom: 2px; }
+.sheet-group-today { display: inline-block; margin-left: 8px; padding: 1px 8px; border-radius: 999px; background: #fff; color: var(--green); font-size: 10px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; vertical-align: 1px; }
+/* Second row: the two roles inside each round. */
+.task-sheet .sheet-subrow th { top: 48px; z-index: 2; background: #efe8d9; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--ink); white-space: normal; }
+.task-sheet .sheet-sub.today { background: var(--green-soft); color: var(--green); }
+.sheet-sub-date { font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--muted); }
+.task-sheet .sheet-sub.today .sheet-sub-date { color: var(--green); }
+/* A heavier rule where each round starts, running through the header and every row. */
+.task-sheet .sheet-group-start { border-left: 3px solid #c9bda5; }
+.task-sheet .sheet-band .sheet-group-start { border-left-color: #0f261c; }
+.task-sheet .sheet-cell-wrap.today.sheet-group-start { border-left-color: #a9cdb8; }
 .task-sheet .sheet-sn { width: 44px; min-width: 44px; max-width: 44px; text-align: center; }
 .task-sheet .sheet-team { width: 110px; min-width: 110px; max-width: 110px; }
 .task-sheet .sheet-owner { width: 130px; min-width: 130px; max-width: 130px; }
@@ -490,9 +505,10 @@ textarea { min-height: 84px; resize: vertical; }
 .sheet-closed { display: block; padding: 6px 8px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: 0.02em; }
 .sheet-filter-note { align-items: center; margin-bottom: 12px; }
 .task-sheet .sheet-add { min-width: 44px; text-align: center; padding: 6px; }
-.sheet-add-form { display: grid; gap: 6px; min-width: 170px; text-align: left; }
+.sheet-add-form { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 300px; text-align: left; }
 .sheet-add-form input { padding: 6px 8px; font: inherit; font-size: 13px; border: 1px solid var(--line); border-radius: 8px; }
 .sheet-add-form .btn { padding: 6px 10px; font-size: 13px; }
+.sheet-add-form .sheet-note { flex-basis: 100%; padding: 0; }
 .sheet-add-btn {
   width: 30px;
   height: 30px;
