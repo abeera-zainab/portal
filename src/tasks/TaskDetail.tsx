@@ -11,14 +11,15 @@ import {
   canWorkTask,
   commentOnTask,
   deleteTask,
-  personTeams,
   roleTags,
-  teamName,
+  taskReviewers,
+  taskTeam,
+  taskTeamLabel,
   updateTask,
   useDatabase,
 } from "../store";
 import { statusLabel } from "./taskStats";
-import { BackLink, DueDate, PriorityBadge, PrioritySelect, StatusBadge, StatusSelect, formatDay, formatWhen } from "./TaskUi";
+import { BackLink, DueDate, PriorityBadge, PrioritySelect, ReviewerSelect, StatusBadge, StatusSelect, TeamSelect, formatDay, formatWhen } from "./TaskUi";
 
 export function TaskDetail({ person, backTo = "/tasks/list" }: { person: Person; backTo?: string }) {
   const { taskId = "" } = useParams();
@@ -33,6 +34,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
   const navigate = useNavigate();
   const assignee = db.people.find((item) => item.userId === task.assigneeUserId);
   const creator = db.people.find((item) => item.userId === task.createdBy);
+  const reviewer = db.people.find((item) => item.userId === task.reviewerUserId);
   const editor = canEditTask(person, task);
   const worker = canWorkTask(person, task);
   const commenter = canCommentOnTask(person, task, db.people);
@@ -50,8 +52,11 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
   const [brief, setBrief] = useState(task.brief);
   const [assigneeUserId, setAssigneeUserId] = useState(task.assigneeUserId);
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
+  const [team, setTeam] = useState(taskTeam(task, assignee) ?? "");
+  const [reviewerUserId, setReviewerUserId] = useState(task.reviewerUserId ?? "");
   const [dueDate, setDueDate] = useState(task.dueDate ?? "");
   const [error, setError] = useState("");
+  const filedUnder = taskTeam(task, assignee);
   const [saved, setSaved] = useState("");
 
   useEffect(() => {
@@ -86,7 +91,14 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
   const saveEdit = (event: FormEvent) => {
     event.preventDefault();
     void run(async () => {
-      await updateTask(task.id, { title, brief, assigneeUserId, priority, dueDate: dueDate || null });
+      await updateTask(task.id, {
+        title,
+        brief,
+        assigneeUserId,
+        priority,
+        dueDate: dueDate || null,
+        ...(person.role === "admin" ? { team: team || null, reviewerUserId: reviewerUserId || null } : {}),
+      });
       setEditing(false);
     }, "Task updated.");
   };
@@ -120,13 +132,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
             <div className="role-tags">
               <StatusBadge status={task.status} />
               <PriorityBadge priority={task.priority} />
-              {assignee
-                ? personTeams(assignee).map((team) => (
-                    <span key={team} className="badge team">
-                      {teamName(team)}
-                    </span>
-                  ))
-                : null}
+              {filedUnder ? <span className="badge team">{taskTeamLabel(filedUnder, db.taskTeams)}</span> : null}
             </div>
           </div>
           <div className="filters">
@@ -163,6 +169,14 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
           <div>
             <dt>Assigned by</dt>
             <dd>{creator?.name ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Reviewer</dt>
+            <dd>{reviewer?.name ?? "—"}</dd>
+          </div>
+          <div>
+            <dt>Team</dt>
+            <dd>{filedUnder ? taskTeamLabel(filedUnder, db.taskTeams) : "—"}</dd>
           </div>
           <div>
             <dt>Due</dt>
@@ -210,6 +224,22 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
                 )}
               </select>
             </label>
+            {person.role === "admin" ? (
+              <label>
+                Reviewer
+                <ReviewerSelect
+                  value={reviewerUserId}
+                  onChange={setReviewerUserId}
+                  people={taskReviewers(db.people, assigneeUserId)}
+                />
+              </label>
+            ) : null}
+            {person.role === "admin" ? (
+              <label>
+                Team name
+                <TeamSelect value={team} onChange={setTeam} teams={db.taskTeams} allowAdd />
+              </label>
+            ) : null}
             <label>
               Priority
               <PrioritySelect value={priority} onChange={setPriority} />
@@ -364,6 +394,10 @@ function activityText(item: TaskActivity, nameOf: (userId: string) => string) {
       return `Reassigned to ${item.detail}`;
     case "priority":
       return `Priority set to ${item.detail}`;
+    case "team":
+      return item.detail ? `Filed under ${item.detail}` : "Team cleared";
+    case "reviewer":
+      return item.detail ? `Reviewer set to ${item.detail}` : "Reviewer cleared";
     case "due":
       return item.detail ? `Due date set to ${formatDay(item.detail)}` : "Due date removed";
     case "edited":

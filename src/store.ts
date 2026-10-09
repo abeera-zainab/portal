@@ -31,6 +31,7 @@ const empty = (): Database => ({
   taskComments: [],
   taskActivity: [],
   sheetDays: [],
+  taskTeams: [],
 });
 
 let database: Database = empty();
@@ -97,7 +98,7 @@ const mutate = async (path: string, method: string, body?: unknown) => {
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
-  const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: Database };
+  const payload = (await response.json().catch(() => ({}))) as { error?: string; state?: Database; teamId?: string };
   if (response.status === 401) {
     clearSession();
     ready = true;
@@ -130,6 +131,11 @@ export const useSession = () => {
 export const teamName = (team: TeamId | null) =>
   TEAMS.find((item) => item.id === team)?.name ?? "No team";
 
+export const taskTeamLabel = (id: string | null | undefined, teams: { id: string; name: string }[] = []) => {
+  if (!id) return "No team";
+  return teams.find((item) => item.id === id)?.name ?? TEAMS.find((item) => item.id === id)?.name ?? id;
+};
+
 export const isOfficer = (person: Person) => person.role === "officer" || Boolean(person.officer);
 
 export const hasOfficerRank = (person: Person) => person.role !== "admin" && isOfficer(person);
@@ -161,6 +167,17 @@ export const roleTags = (person: Person): { id: string; label: string }[] => {
 
 export const personTeams = (person: Person): TeamId[] =>
   person.teams?.length ? person.teams : person.team ? [person.team] : [];
+
+/** Default team for a task: the assignee's first team in TEAMS order. */
+export const defaultTaskTeam = (assignee: Person | undefined): TeamId | null => {
+  if (!assignee) return null;
+  const teams = personTeams(assignee);
+  return TEAMS.find((team) => teams.includes(team.id))?.id ?? null;
+};
+
+/** Team a task is filed under: the one chosen on the task, else the assignee's first team. */
+export const taskTeam = (task: Task, assignee: Person | undefined): string | null =>
+  task.team ?? defaultTaskTeam(assignee);
 
 export const isCiso = (person: Person) =>
   person.userId === "PSS002" || person.username.toLowerCase() === "hassanazwar";
@@ -424,6 +441,24 @@ export const canAssignTo = (assigner: Person, person: Person) => {
 export const assignableFor = (assigner: Person, people: Person[]) =>
   people.filter((person) => canAssignTo(assigner, person)).sort((a, b) => a.name.localeCompare(b.name));
 
+export const canBeTaskReviewer = (person: Person, assigneeUserId?: string) =>
+  isPersonActive(person) &&
+  person.role !== "hr" &&
+  person.userId !== assigneeUserId &&
+  (person.role === "admin" || hasLeadRights(person) || isCiso(person));
+
+export const taskReviewers = (people: Person[], assigneeUserId?: string) =>
+  people.filter((item) => canBeTaskReviewer(item, assigneeUserId)).sort((a, b) => a.name.localeCompare(b.name));
+
+export const defaultTaskReviewer = (assigner: Person, assignee: Person | undefined, people: Person[]) => {
+  const manager = assignee?.reportsTo ? people.find((item) => item.userId === assignee.reportsTo) : undefined;
+  if (manager && canBeTaskReviewer(manager, assignee?.userId)) return manager.userId;
+  const ciso = people.find((item) => isCiso(item) && canBeTaskReviewer(item, assignee?.userId));
+  if (ciso) return ciso.userId;
+  if (canBeTaskReviewer(assigner, assignee?.userId)) return assigner.userId;
+  return "";
+};
+
 export const isTaskOwner = (person: Person, task: Task) => person.role === "admin" || task.createdBy === person.userId;
 
 export const canEditTask = (person: Person | null, task: Task) => Boolean(person && isTaskOwner(person, task));
@@ -437,7 +472,7 @@ export const leadsTeamOf = (lead: Person, assignee: Person | undefined) =>
 
 export const canCommentOnTask = (person: Person | null, task: Task, people: Person[]) => {
   if (!person) return false;
-  if (isTaskOwner(person, task) || canWorkTask(person, task)) return true;
+  if (isTaskOwner(person, task) || canWorkTask(person, task) || person.userId === task.reviewerUserId) return true;
   const assignee = people.find((item) => item.userId === task.assigneeUserId);
   return leadsTeamOf(person, assignee);
 };
@@ -475,6 +510,11 @@ export const canWriteTaskCell = (
 
 export const canAddSheetDay = (person: Person | null) => Boolean(person && person.role === "admin");
 
+export const addTaskTeam = async (name: string) => {
+  const payload = await mutate("/api/tasks/teams", "POST", { name });
+  return payload.teamId ?? "";
+};
+
 export const canWriteResponse = (person: Person | null, task: Task, day: string, own?: TaskComment) =>
   canWriteTaskCell(person, task, "response", day, [], own);
 
@@ -483,6 +523,9 @@ export const createTask = async (input: {
   brief?: string;
   assigneeUserId: string;
   priority?: TaskPriority;
+  team?: string | null;
+  reviewerUserId?: string | null;
+  review?: string;
   dueDate?: string;
 }) => {
   await mutate("/api/tasks", "POST", input);
@@ -497,6 +540,8 @@ export const updateTask = async (
     assigneeUserId?: string;
     status?: TaskStatus;
     priority?: TaskPriority;
+    team?: string | null;
+    reviewerUserId?: string | null;
     dueDate?: string | null;
   }
 ) => {

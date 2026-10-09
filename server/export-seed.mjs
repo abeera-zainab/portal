@@ -93,12 +93,18 @@ for (const l of leave.rows) {
   lines.push(row("leave_requests", leaveCols, leaveCols.map((col) => l[col]), "ON CONFLICT (id) DO NOTHING"));
 }
 
+const taskTeams = await client.query(`SELECT id, name, added_by, created_at FROM task_teams ORDER BY created_at, name`);
+const taskTeamCols = ["id", "name", "added_by", "created_at"];
+for (const t of taskTeams.rows) {
+  lines.push(row("task_teams", taskTeamCols, taskTeamCols.map((col) => t[col]), "ON CONFLICT (id) DO NOTHING"));
+}
+
 const tasks = await client.query(
-  `SELECT id, title, brief, description, assignee_user_id, status, priority, to_char(due_date, 'YYYY-MM-DD') AS due_date,
-          created_by, created_at, updated_at, completed_at
+  `SELECT id, title, brief, description, assignee_user_id, status, priority, team, reviewer_user_id,
+          to_char(due_date, 'YYYY-MM-DD') AS due_date, created_by, created_at, updated_at, completed_at
    FROM tasks ORDER BY created_at, id`
 );
-const taskCols = ["id", "title", "brief", "description", "assignee_user_id", "status", "priority", "due_date", "created_by", "created_at", "updated_at", "completed_at"];
+const taskCols = ["id", "title", "brief", "description", "assignee_user_id", "status", "priority", "team", "reviewer_user_id", "due_date", "created_by", "created_at", "updated_at", "completed_at"];
 for (const t of tasks.rows) {
   lines.push(row("tasks", taskCols, taskCols.map((col) => t[col]), "ON CONFLICT (id) DO NOTHING"));
 }
@@ -130,5 +136,5 @@ await client.end();
 writeFileSync(out, lines.join("\n"), "utf8");
 console.log(
   `Wrote ${path.relative(process.cwd(), out)}: ${people.rowCount} people, ${attendance.rowCount} attendance, ${leave.rowCount} leave, ` +
-    `${tasks.rowCount} tasks, ${comments.rowCount} comments, ${activity.rowCount} activity, ${sheetDays.rowCount} sheet days.`
+    `${tasks.rowCount} tasks, ${taskTeams.rowCount} task teams, ${comments.rowCount} comments, ${activity.rowCount} activity, ${sheetDays.rowCount} sheet days.`
 );

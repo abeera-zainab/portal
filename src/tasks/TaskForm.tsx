@@ -2,8 +2,8 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import type { Person, TaskPriority } from "../types";
-import { assignableFor, canAssignTasks, createTask, personTeams, teamName, todayKey, useDatabase } from "../store";
-import { BackLink, PrioritySelect } from "./TaskUi";
+import { assignableFor, canAssignTasks, createTask, defaultTaskReviewer, defaultTaskTeam, personTeams, taskReviewers, teamName, todayKey, useDatabase } from "../store";
+import { BackLink, PrioritySelect, ReviewerSelect, TeamSelect } from "./TaskUi";
 
 export function TaskForm({ person }: { person: Person }) {
   const db = useDatabase();
@@ -11,9 +11,15 @@ export function TaskForm({ person }: { person: Person }) {
   const [params] = useSearchParams();
   const people = assignableFor(person, db.people);
   const preset = params.get("person") || "";
+  const admin = person.role === "admin";
   const [title, setTitle] = useState("");
   const [brief, setBrief] = useState("");
   const [assigneeUserId, setAssigneeUserId] = useState(people.some((item) => item.userId === preset) ? preset : "");
+  const [team, setTeam] = useState(defaultTaskTeam(people.find((item) => item.userId === preset)) ?? "");
+  const [reviewerUserId, setReviewerUserId] = useState(
+    defaultTaskReviewer(person, people.find((item) => item.userId === preset), db.people)
+  );
+  const [review, setReview] = useState("");
   const [priority, setPriority] = useState<TaskPriority>("medium");
   const [dueDate, setDueDate] = useState("");
   const [error, setError] = useState("");
@@ -21,11 +27,31 @@ export function TaskForm({ person }: { person: Person }) {
 
   if (!canAssignTasks(person)) return <Navigate to="/tasks" replace />;
 
+  const assignee = people.find((item) => item.userId === assigneeUserId);
+
+  const reviewers = taskReviewers(db.people, assigneeUserId);
+
+  const chooseAssignee = (userId: string) => {
+    const next = people.find((item) => item.userId === userId);
+    setAssigneeUserId(userId);
+    setTeam(defaultTaskTeam(next) ?? "");
+    setReviewerUserId(defaultTaskReviewer(person, next, db.people));
+  };
+
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaving(true);
     try {
-      await createTask({ title, brief, assigneeUserId, priority, dueDate: dueDate || undefined });
+      await createTask({
+        title,
+        brief,
+        assigneeUserId,
+        priority,
+        team: admin ? team || null : undefined,
+        reviewerUserId: admin ? reviewerUserId || null : undefined,
+        review: admin ? review : undefined,
+        dueDate: dueDate || undefined,
+      });
       navigate("/tasks/list?view=assigned");
     } catch (err) {
       setError(err instanceof Error ? err.message : "Could not add the task.");
@@ -55,16 +81,35 @@ export function TaskForm({ person }: { person: Person }) {
           </label>
           <label>
             Assign to
-            <select value={assigneeUserId} onChange={(event) => setAssigneeUserId(event.target.value)} required>
+            <select value={assigneeUserId} onChange={(event) => chooseAssignee(event.target.value)} required>
               <option value="">Choose a person</option>
               {people.map((item) => (
                 <option key={item.userId} value={item.userId}>
                   {item.name}
-                  {person.role === "admin" ? ` · ${personTeams(item).map((team) => teamName(team)).join(", ") || "No team"}` : ""}
+                  {admin ? ` · ${personTeams(item).map((item) => teamName(item)).join(", ") || "No team"}` : ""}
                 </option>
               ))}
             </select>
           </label>
+          {admin ? (
+            <label>
+              Reviewer
+              <ReviewerSelect value={reviewerUserId} onChange={setReviewerUserId} people={reviewers} />
+            </label>
+          ) : null}
+          {admin ? (
+            <label>
+              Team name
+              <TeamSelect value={team} onChange={setTeam} teams={db.taskTeams} allowAdd />
+              <small className="muted">
+                {assignee
+                  ? personTeams(assignee).length
+                    ? `${assignee.name} is on ${personTeams(assignee).map((item) => teamName(item)).join(", ")}.`
+                    : `${assignee.name} has no team yet.`
+                  : "Filed under this team on the sheet and analytics."}
+              </small>
+            </label>
+          ) : null}
           <label>
             Priority
             <PrioritySelect value={priority} onChange={setPriority} />
@@ -81,6 +126,16 @@ export function TaskForm({ person }: { person: Person }) {
               placeholder="What needs to be done, and anything the assignee should know."
             />
           </label>
+          {admin ? (
+            <label className="span-2">
+              Review
+              <textarea
+                value={review}
+                onChange={(event) => setReview(event.target.value)}
+                placeholder="Optional. Posted as today's reviewer comment on the sheet."
+              />
+            </label>
+          ) : null}
           <div className="row span-2">
             <button className="btn" type="submit" disabled={saving}>
               Add task

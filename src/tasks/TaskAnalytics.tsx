@@ -4,7 +4,7 @@ import { Bar, BarChart, CartesianGrid, Legend, ResponsiveContainer, Tooltip, XAx
 import type { Person } from "../types";
 import { PeriodChart } from "../PeriodChart";
 import type { PeriodBar } from "../PeriodChart";
-import { TEAMS, canAssignTasks, hasLeadRights, isTaskAssignable, personTeams, sharesTeam, useDatabase, visibleTasks } from "../store";
+import { TEAMS, canAssignTasks, hasLeadRights, isTaskAssignable, personTeams, sharesTeam, taskTeam, useDatabase, visibleTasks } from "../store";
 import { summarizeTasks, taskTrend, tasksByPerson, tasksByTeam } from "./taskStats";
 import { TaskList } from "./TaskList";
 
@@ -48,7 +48,20 @@ export function TaskAnalytics({ person }: { person: Person }) {
 
   const teams = admin ? TEAMS.map((team) => team.id) : personTeams(person);
   const summary = useMemo(() => summarizeTasks(scope), [scope]);
-  const byTeam = useMemo(() => tasksByTeam(scope, db.people, teams), [scope, db.people, teams]);
+  const byTeam = useMemo(() => {
+    const catalog = db.taskTeams.length ? db.taskTeams : TEAMS;
+    if (admin) return tasksByTeam(scope, db.people, catalog);
+    const allowed = new Set<string>(teams);
+    for (const task of scope) {
+      const id = taskTeam(task, db.people.find((item) => item.userId === task.assigneeUserId));
+      if (id) allowed.add(id);
+    }
+    return tasksByTeam(
+      scope,
+      db.people,
+      catalog.filter((item) => allowed.has(item.id))
+    );
+  }, [scope, db.people, db.taskTeams, admin, teams]);
   const roster = useMemo(
     () => db.people.filter((item) => isTaskAssignable(item) && (admin || sharesTeam(person, item))),
     [db.people, admin, person]

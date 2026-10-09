@@ -1,7 +1,8 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { Task, TaskPriority, TaskStatus } from "../types";
-import { isTaskOverdue, todayKey } from "../store";
+import { addTaskTeam, isTaskOverdue, todayKey } from "../store";
 import { priorityLabel, statusLabel } from "./taskStats";
 
 /**
@@ -78,6 +79,110 @@ export function PrioritySelect({ value, onChange }: { value: TaskPriority; onCha
       <option value="high">High</option>
       <option value="medium">Medium</option>
       <option value="low">Low</option>
+    </select>
+  );
+}
+
+export function TeamSelect({
+  value,
+  onChange,
+  teams,
+  allowAdd = false,
+}: {
+  value: string;
+  onChange: (team: string) => void;
+  teams: { id: string; name: string }[];
+  allowAdd?: boolean;
+}) {
+  const [adding, setAdding] = useState(false);
+  const [name, setName] = useState("");
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  const add = async () => {
+    setSaving(true);
+    setError("");
+    try {
+      const id = await addTaskTeam(name);
+      if (id) onChange(id);
+      setName("");
+      setAdding(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not add the team.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="team-select">
+      <div className="row">
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">Assignee's team</option>
+          {teams.map((team) => (
+            <option key={team.id} value={team.id}>
+              {team.name}
+            </option>
+          ))}
+        </select>
+        {allowAdd ? (
+          <button type="button" className="sheet-add-btn" title="Add a team name" onClick={() => setAdding(true)}>
+            +
+          </button>
+        ) : null}
+      </div>
+      {adding ? (
+        <div className="sheet-add-form">
+          <input
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            placeholder="New team name"
+            autoFocus
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                void add();
+              }
+            }}
+          />
+          <button type="button" className="btn" disabled={saving || name.trim().length < 2} onClick={() => void add()}>
+            Add
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            onClick={() => {
+              setAdding(false);
+              setName("");
+              setError("");
+            }}
+          >
+            Cancel
+          </button>
+          {error ? <small className="sheet-note error">{error}</small> : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+export function ReviewerSelect({
+  value,
+  onChange,
+  people,
+}: {
+  value: string;
+  onChange: (userId: string) => void;
+  people: { userId: string; name: string }[];
+}) {
+  return (
+    <select value={value} onChange={(event) => onChange(event.target.value)}>
+      <option value="">No reviewer</option>
+      {people.map((item) => (
+        <option key={item.userId} value={item.userId}>
+          {item.name}
+        </option>
+      ))}
     </select>
   );
 }

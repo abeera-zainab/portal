@@ -22,7 +22,7 @@ export function TaskOverviewCard({ person }: { person: Person }) {
   const db = useDatabase();
   const navigate = useNavigate();
   const admin = person.role === "admin";
-  const teams = admin ? TEAMS.map((team) => team.id) : personTeams(person);
+  const teams = admin ? (db.taskTeams.length ? db.taskTeams : TEAMS) : personTeams(person).map((id) => TEAMS.find((team) => team.id === id) ?? { id, name: id });
 
   const scope = useMemo(() => {
     const tasks = visibleTasks(person, db.tasks, db.people);

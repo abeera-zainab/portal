@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent } from "react";
 import { Link } from "react-router-dom";
-import type { Person, Task, TaskComment, TaskCommentKind, TaskStatus, TeamId } from "../types";
+import type { Person, Task, TaskComment, TaskCommentKind, TaskStatus, TaskTeam } from "../types";
 import {
   TEAMS,
   addSheetDay,
@@ -9,15 +9,15 @@ import {
   canEditTask,
   canWorkTask,
   canWriteTaskCell,
-  personTeams,
   saveTaskCell,
-  teamName,
+  taskTeam,
+  taskTeamLabel,
   todayKey,
   updateTask,
   useDatabase,
 } from "../store";
 import { sortTasks } from "./taskStats";
-import { DueDate, PriorityBadge, StatusBadge, StatusSelect, formatDay } from "./TaskUi";
+import { DueDate, StatusBadge, StatusSelect, formatDay } from "./TaskUi";
 
 const FIXED_COLUMNS = 4;
 
@@ -27,7 +27,7 @@ type SheetRow = {
   teamSpan: number;
   ownerSpan: number;
   serial: number;
-  teamId: TeamId | "none";
+  teamId: string;
 };
 
 const shortDay = (day: string) => {
@@ -36,20 +36,17 @@ const shortDay = (day: string) => {
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 };
 
-/** Team a task is filed under on the sheet: the assignee's first team, in TEAMS order. */
-const sheetTeam = (assignee: Person | undefined): TeamId | "none" => {
-  if (!assignee) return "none";
-  const teams = personTeams(assignee);
-  return TEAMS.find((team) => teams.includes(team.id))?.id ?? "none";
-};
+/** Team a task is filed under on the sheet: the one picked on the task, else the assignee's first team. */
+const sheetTeam = (task: Task, assignee: Person | undefined) => taskTeam(task, assignee) ?? "none";
 
 /** Groups tasks by team then owner and works out the merged-cell spans, like the spreadsheet. */
-export const buildSheetRows = (tasks: Task[], people: Person[]): SheetRow[] => {
-  const order = new Map<TeamId | "none", number>(TEAMS.map((team, index) => [team.id, index]));
-  order.set("none", TEAMS.length);
+export const buildSheetRows = (tasks: Task[], people: Person[], taskTeams: TaskTeam[] = []): SheetRow[] => {
+  const catalog = taskTeams.length ? taskTeams : TEAMS;
+  const order = new Map<string, number>(catalog.map((team, index) => [team.id, index]));
+  order.set("none", catalog.length);
   const decorated = sortTasks(tasks).map((task) => {
     const assignee = people.find((item) => item.userId === task.assigneeUserId);
-    return { task, assignee, teamId: sheetTeam(assignee), ownerName: assignee?.name ?? "Former member" };
+    return { task, assignee, teamId: sheetTeam(task, assignee), ownerName: assignee?.name ?? "Former member" };
   });
   decorated.sort((left, right) => {
     const team = (order.get(left.teamId) ?? 99) - (order.get(right.teamId) ?? 99);
@@ -237,7 +234,7 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                     ) : null}
                     {row.teamSpan ? (
                       <td rowSpan={row.teamSpan} className="sheet-team sheet-merged">
-                        {row.teamId === "none" ? "—" : teamName(row.teamId)}
+                        {row.teamId === "none" ? "—" : taskTeamLabel(row.teamId, db.taskTeams)}
                       </td>
                     ) : null}
                     {row.ownerSpan ? (
@@ -251,7 +248,6 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                       </Link>
                       {task.brief ? <small className="task-brief">{task.brief}</small> : null}
                       <div className="sheet-meta">
-                        <PriorityBadge priority={task.priority} />
                         <DueDate task={task} />
                       </div>
                       <div className="sheet-meta">

@@ -124,6 +124,8 @@ await pool.query(`
   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS priority TEXT NOT NULL DEFAULT 'medium';
   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS due_date DATE;
   ALTER TABLE tasks ADD COLUMN IF NOT EXISTS completed_at TIMESTAMPTZ;
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS team TEXT;
+  ALTER TABLE tasks ADD COLUMN IF NOT EXISTS reviewer_user_id TEXT REFERENCES people(user_id) ON DELETE SET NULL;
 
   CREATE TABLE IF NOT EXISTS task_comments (
     id TEXT PRIMARY KEY,
@@ -150,6 +152,27 @@ await pool.query(`
     added_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+
+  CREATE TABLE IF NOT EXISTS task_teams (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    added_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+`);
+
+await pool.query(`
+  INSERT INTO task_teams (id, name) VALUES
+    ('offensive', 'Offensive'),
+    ('defensive', 'Defensive'),
+    ('ops', 'INT'),
+    ('product', 'Product Development')
+  ON CONFLICT (id) DO NOTHING
+`);
+await pool.query(`
+  INSERT INTO task_teams (id, name)
+  SELECT DISTINCT team, team FROM tasks
+  WHERE team IS NOT NULL AND team <> '' AND team NOT IN (SELECT id FROM task_teams)
 `);
 
 // Comments written before the status sheet existed get a date and a kind so they show up as cells.
@@ -221,7 +244,7 @@ const localDate = (value = new Date()) => {
 };
 
 async function readState() {
-  const [people, attendance, leave, tasks, taskComments, taskActivity, sheetDays] = await Promise.all([
+  const [people, attendance, leave, tasks, taskComments, taskActivity, sheetDays, taskTeams] = await Promise.all([
     pool.query(
       `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, work_mode, officer, mto,
               reports_to, to_char(joined, 'YYYY-MM-DD') AS joined
@@ -237,7 +260,7 @@ async function readState() {
        FROM leave_requests ORDER BY from_date DESC`
     ),
     pool.query(
-      `SELECT id, title, brief, description, assignee_user_id, status, priority, created_by, created_at, updated_at,
+      `SELECT id, title, brief, description, assignee_user_id, status, priority, team, reviewer_user_id, created_by, created_at, updated_at,
               completed_at, to_char(due_date, 'YYYY-MM-DD') AS due_date
        FROM tasks ORDER BY updated_at DESC`
     ),
@@ -250,6 +273,7 @@ async function readState() {
        FROM task_activity ORDER BY created_at ASC`
     ),
     pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day FROM sheet_days ORDER BY day ASC`),
+    pool.query(`SELECT id, name FROM task_teams ORDER BY created_at ASC, name ASC`),
   ]);
 
   return {
@@ -296,6 +320,8 @@ async function readState() {
       assigneeUserId: row.assignee_user_id,
       status: row.status,
       priority: row.priority || "medium",
+      team: row.team || undefined,
+      reviewerUserId: row.reviewer_user_id || undefined,
       dueDate: row.due_date || undefined,
       createdBy: row.created_by || "",
       createdAt: new Date(row.created_at).toISOString(),
@@ -320,6 +346,7 @@ async function readState() {
       createdAt: new Date(row.created_at).toISOString(),
     })),
     sheetDays: sheetDays.rows.map((row) => row.day),
+    taskTeams: taskTeams.rows.map((row) => ({ id: row.id, name: row.name })),
   };
 }
 
@@ -1071,6 +1098,31 @@ const TASK_STATUSES = new Set(["open", "in_progress", "done"]);
 const TASK_PRIORITIES = new Set(["low", "medium", "high"]);
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/;
 
+const slugifyTeam = (name) =>
+  name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40) || "team";
+
+async function uniqueTaskTeamId(name) {
+  const base = slugifyTeam(name);
+  let id = base;
+  let n = 2;
+  while (true) {
+    const exists = await pool.query(`SELECT 1 FROM task_teams WHERE id = $1`, [id]);
+    if (!exists.rowCount) return id;
+    id = `${base}-${n}`;
+    n += 1;
+  }
+}
+
+async function findTaskTeam(id) {
+  if (!id) return null;
+  const result = await pool.query(`SELECT id, name FROM task_teams WHERE id = $1`, [id]);
+  return result.rows[0] ?? null;
+}
+
 const taskStatusLabel = (status) => (status === "in_progress" ? "In progress" : status === "done" ? "Done" : "Open");
 const taskPriorityLabel = (priority) => priority.charAt(0).toUpperCase() + priority.slice(1);
 
@@ -1097,8 +1149,18 @@ const canAssignTo = (who, person) => {
 
 const isTaskOwner = (who, task) => who.role === "admin" || task.created_by === who.user_id;
 
+const canBeTaskReviewer = (row, assigneeUserId) =>
+  Boolean(row) &&
+  row.active !== false &&
+  row.role !== "hr" &&
+  row.user_id !== assigneeUserId &&
+  (row.role === "admin" || hasLeadRights(row) || isCisoRow(row));
+
 const canCommentOnTask = (who, task, assignee) =>
-  isTaskOwner(who, task) || who.user_id === task.assignee_user_id || (hasLeadRights(who) && rowsShareTeam(who, assignee));
+  isTaskOwner(who, task) ||
+  who.user_id === task.assignee_user_id ||
+  who.user_id === task.reviewer_user_id ||
+  (hasLeadRights(who) && rowsShareTeam(who, assignee));
 
 async function logActivity(taskId, actorId, kind, detail = "") {
   await pool.query(
@@ -1118,6 +1180,9 @@ app.post("/api/tasks", async (req, res) => {
   const assigneeUserId = String(req.body.assigneeUserId || "").trim();
   const priority = String(req.body.priority || "medium");
   const dueDate = req.body.dueDate ? String(req.body.dueDate) : null;
+  const team = req.body.team ? String(req.body.team) : null;
+  const reviewerUserId = req.body.reviewerUserId ? String(req.body.reviewerUserId).trim() : null;
+  const review = String(req.body.review || "").trim();
   if (!title) {
     res.status(400).json({ error: "Enter a title." });
     return;
@@ -1130,6 +1195,11 @@ app.post("/api/tasks", async (req, res) => {
     res.status(400).json({ error: "Enter a valid due date." });
     return;
   }
+  const teamRow = team ? await findTaskTeam(team) : null;
+  if (team && !teamRow) {
+    res.status(400).json({ error: "Choose a valid team." });
+    return;
+  }
   const assignee = await personRow(assigneeUserId);
   if (!canAssignTo(who, assignee)) {
     res.status(400).json({
@@ -1137,13 +1207,31 @@ app.post("/api/tasks", async (req, res) => {
     });
     return;
   }
+  let reviewer = null;
+  if (reviewerUserId) {
+    reviewer = await personRow(reviewerUserId);
+    if (!canBeTaskReviewer(reviewer, assigneeUserId)) {
+      res.status(400).json({ error: "Choose an admin, officer, or team lead to review this task." });
+      return;
+    }
+  }
   const id = crypto.randomUUID();
   await pool.query(
-    `INSERT INTO tasks (id, title, brief, description, assignee_user_id, status, priority, due_date, created_by)
-     VALUES ($1,$2,$3,'',$4,'open',$5,$6,$7)`,
-    [id, title, brief, assigneeUserId, priority, dueDate, who.user_id]
+    `INSERT INTO tasks (id, title, brief, description, assignee_user_id, status, priority, due_date, team, reviewer_user_id, created_by)
+     VALUES ($1,$2,$3,'',$4,'open',$5,$6,$7,$8,$9)`,
+    [id, title, brief, assigneeUserId, priority, dueDate, team, reviewerUserId, who.user_id]
   );
-  await logActivity(id, who.user_id, "created", `Assigned to ${assignee.name}`);
+  const createdBits = [`Assigned to ${assignee.name}`];
+  if (teamRow) createdBits.push(teamRow.name);
+  if (reviewer) createdBits.push(`Reviewed by ${reviewer.name}`);
+  await logActivity(id, who.user_id, "created", createdBits.join(" · "));
+  if (review) {
+    await pool.query(
+      `INSERT INTO task_comments (id, task_id, author_user_id, body, kind, entry_date) VALUES ($1,$2,$3,$4,'comment',$5)`,
+      [crypto.randomUUID(), id, who.user_id, review, localDate()]
+    );
+    await logActivity(id, who.user_id, "comment", "comment");
+  }
   res.json({ state: await readState(), taskId: id });
 });
 
@@ -1171,7 +1259,9 @@ app.patch("/api/tasks/:id", async (req, res) => {
     body.brief !== undefined ||
     body.assigneeUserId !== undefined ||
     body.priority !== undefined ||
-    body.dueDate !== undefined;
+    body.dueDate !== undefined ||
+    body.team !== undefined ||
+    body.reviewerUserId !== undefined;
   if (touchesMeta && !owner) {
     res.status(403).json({ error: "You can only update the description and status." });
     return;
@@ -1193,6 +1283,9 @@ app.patch("/api/tasks/:id", async (req, res) => {
   const priority = body.priority === undefined ? task.priority : String(body.priority || "");
   const currentDue = task.due_date ? localDate(new Date(task.due_date)) : null;
   const dueDate = body.dueDate === undefined ? currentDue : body.dueDate ? String(body.dueDate) : null;
+  const team = body.team === undefined ? task.team || null : body.team ? String(body.team) : null;
+  const reviewerUserId =
+    body.reviewerUserId === undefined ? task.reviewer_user_id || null : body.reviewerUserId ? String(body.reviewerUserId) : null;
 
   if (!title) {
     res.status(400).json({ error: "Enter a title." });
@@ -1210,6 +1303,11 @@ app.patch("/api/tasks/:id", async (req, res) => {
     res.status(400).json({ error: "Enter a valid due date." });
     return;
   }
+  const teamRow = team ? await findTaskTeam(team) : null;
+  if (team && !teamRow) {
+    res.status(400).json({ error: "Choose a valid team." });
+    return;
+  }
   let newAssignee = null;
   if (assigneeUserId !== task.assignee_user_id) {
     newAssignee = await personRow(assigneeUserId);
@@ -1220,6 +1318,17 @@ app.patch("/api/tasks/:id", async (req, res) => {
       return;
     }
   }
+  let newReviewer = null;
+  if (reviewerUserId && reviewerUserId !== (task.reviewer_user_id || null)) {
+    newReviewer = await personRow(reviewerUserId);
+    if (!canBeTaskReviewer(newReviewer, assigneeUserId)) {
+      res.status(400).json({ error: "Choose an admin, officer, or team lead to review this task." });
+      return;
+    }
+  } else if (reviewerUserId && reviewerUserId === assigneeUserId) {
+    res.status(400).json({ error: "The reviewer cannot be the person the task is assigned to." });
+    return;
+  }
 
   const completedAt =
     status === "done" ? (task.status === "done" && task.completed_at ? task.completed_at : new Date()) : null;
@@ -1227,14 +1336,19 @@ app.patch("/api/tasks/:id", async (req, res) => {
   await pool.query(
     `UPDATE tasks
      SET title = $2, brief = $3, description = $4, assignee_user_id = $5, status = $6, priority = $7, due_date = $8,
-         completed_at = $9, updated_at = NOW()
+         completed_at = $9, team = $10, reviewer_user_id = $11, updated_at = NOW()
      WHERE id = $1`,
-    [task.id, title, brief, description, assigneeUserId, status, priority, dueDate, completedAt]
+    [task.id, title, brief, description, assigneeUserId, status, priority, dueDate, completedAt, team, reviewerUserId]
   );
 
   if (status !== task.status) await logActivity(task.id, who.user_id, "status", taskStatusLabel(status));
   if (newAssignee) await logActivity(task.id, who.user_id, "reassigned", newAssignee.name);
   if (priority !== task.priority) await logActivity(task.id, who.user_id, "priority", taskPriorityLabel(priority));
+  if (team !== (task.team || null)) await logActivity(task.id, who.user_id, "team", teamRow?.name || "");
+  if (reviewerUserId !== (task.reviewer_user_id || null)) {
+    const named = newReviewer?.name ?? (reviewerUserId ? (await personRow(reviewerUserId))?.name : "");
+    await logActivity(task.id, who.user_id, "reviewer", named || "");
+  }
   if (dueDate !== currentDue) await logActivity(task.id, who.user_id, "due", dueDate || "");
   if (title !== task.title || brief !== task.brief) await logActivity(task.id, who.user_id, "edited", "");
   if (description !== task.description) await logActivity(task.id, who.user_id, "description", "");
@@ -1276,6 +1390,31 @@ app.post("/api/tasks/:id/comments", async (req, res) => {
   await pool.query(`UPDATE tasks SET updated_at = NOW() WHERE id = $1`, [task.id]);
   await logActivity(task.id, who.user_id, "comment", kind);
   res.json({ state: await readState() });
+});
+
+app.post("/api/tasks/teams", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role !== "admin") {
+    res.status(403).json({ error: "Only the admin adds team names." });
+    return;
+  }
+  const name = String(req.body.name || "").trim();
+  if (name.length < 2) {
+    res.status(400).json({ error: "Enter a team name." });
+    return;
+  }
+  if (name.length > 60) {
+    res.status(400).json({ error: "Team names can be 60 characters at most." });
+    return;
+  }
+  const existing = await pool.query(`SELECT id FROM task_teams WHERE lower(name) = lower($1)`, [name]);
+  if (existing.rowCount) {
+    res.json({ state: await readState(), teamId: existing.rows[0].id });
+    return;
+  }
+  const id = await uniqueTaskTeamId(name);
+  await pool.query(`INSERT INTO task_teams (id, name, added_by) VALUES ($1, $2, $3)`, [id, name, who.user_id]);
+  res.json({ state: await readState(), teamId: id });
 });
 
 // Admin opens a review-date column on the sheet (today or a previous date) so owners can fill it in.

@@ -1,7 +1,7 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import type { Person, Task, TaskPriority, TaskStatus, TeamId } from "../types";
-import { canAssignTasks, hasLeadRights, isTaskOverdue, personTeams, sharesTeam, teamName, useDatabase, visibleTasks } from "../store";
+import type { Person, Task, TaskPriority, TaskStatus } from "../types";
+import { canAssignTasks, hasLeadRights, isTaskOverdue, sharesTeam, taskTeam, taskTeamLabel, useDatabase, visibleTasks } from "../store";
 import { priorityLabel, sortTasks, statusLabel } from "./taskStats";
 import { TaskSheet, buildSheetRows } from "./TaskSheet";
 import { BackLink } from "./TaskUi";
@@ -38,7 +38,7 @@ export function TaskList({ person }: { person: Person }) {
   const view: View = views.some((item) => item.id === requestedView) ? (requestedView as View) : views[0].id;
   const status = (params.get("status") || "") as "" | TaskStatus;
   const priority = (params.get("priority") || "") as "" | TaskPriority;
-  const team = (params.get("team") || "") as "" | TeamId;
+  const team = params.get("team") || "";
   const personFilter = params.get("person") || "";
   const overdueOnly = params.get("overdue") === "1";
   const admin = person.role === "admin";
@@ -58,7 +58,7 @@ export function TaskList({ person }: { person: Person }) {
     return visible.filter((task) => {
       const assignee = db.people.find((item) => item.userId === task.assigneeUserId);
       if (!inView(view, person, task, assignee)) return false;
-      if (team && (!assignee || !personTeams(assignee).includes(team))) return false;
+      if (team && taskTeam(task, assignee) !== team) return false;
       if (personFilter && task.assigneeUserId !== personFilter) return false;
       return true;
     });
@@ -77,14 +77,14 @@ export function TaskList({ person }: { person: Person }) {
     [scoped, status, priority, overdueOnly]
   );
 
-  const sheetRows = useMemo(() => buildSheetRows(rows, db.people), [rows, db.people]);
+  const sheetRows = useMemo(() => buildSheetRows(rows, db.people, db.taskTeams), [rows, db.people, db.taskTeams]);
 
   // Filters arrive from analytics links; the sheet itself has no filter controls.
   const activeFilters = [
     status ? `${statusLabel(status).toLowerCase()} tasks` : "",
     overdueOnly ? "overdue tasks" : "",
     priority ? `${priorityLabel(priority).toLowerCase()} priority` : "",
-    team ? teamName(team) : "",
+    team ? taskTeamLabel(team, db.taskTeams) : "",
     personFilter ? db.people.find((item) => item.userId === personFilter)?.name ?? "" : "",
   ].filter(Boolean);
 

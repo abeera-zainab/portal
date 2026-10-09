@@ -54,6 +54,10 @@ export interface Task {
   assigneeUserId: string;
   status: TaskStatus;
   priority: TaskPriority;
+  /** Team the task is filed under (id from taskTeams). Falls back to the assignee's first org team. */
+  team?: string;
+  /** Person asked to review the work (admin, CISO, officer, or team lead). */
+  reviewerUserId?: string;
   dueDate?: string;
   createdBy: string;
   createdAt: string;
@@ -80,6 +84,8 @@ export type TaskActivityKind =
   | "status"
   | "reassigned"
   | "priority"
+  | "team"
+  | "reviewer"
   | "due"
   | "edited"
   | "description"
@@ -94,6 +100,11 @@ export interface TaskActivity {
   createdAt: string;
 }
 
+export interface TaskTeam {
+  id: string;
+  name: string;
+}
+
 export interface Database {
   people: Person[];
   attendance: AttendanceRecord[];
@@ -103,4 +114,6 @@ export interface Database {
   taskActivity: TaskActivity[];
   /** Review-date columns the admin opened on the task sheet (YYYY-MM-DD). */
   sheetDays: string[];
+  /** Labels the admin can file tasks under, including ones they add. */
+  taskTeams: TaskTeam[];
 }

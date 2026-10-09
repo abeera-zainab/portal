@@ -1,5 +1,5 @@
-import type { Person, Task, TaskPriority, TaskStatus, TeamId } from "../types";
-import { TEAMS, isTaskOverdue, personTeams, todayKey } from "../store";
+import type { Person, Task, TaskPriority, TaskStatus } from "../types";
+import { TEAMS, isTaskOverdue, taskTeam, todayKey } from "../store";
 
 export const TASK_STATUSES: TaskStatus[] = ["open", "in_progress", "done"];
 export const TASK_PRIORITIES: TaskPriority[] = ["high", "medium", "low"];
@@ -101,7 +101,7 @@ export function summarizeTasks(tasks: Task[], now = new Date()): TaskSummary {
 }
 
 export interface TeamTaskRow {
-  teamId: TeamId;
+  teamId: string;
   team: string;
   open: number;
   inProgress: number;
@@ -110,12 +110,16 @@ export interface TeamTaskRow {
   total: number;
 }
 
-export function tasksByTeam(tasks: Task[], people: Person[], teams: TeamId[] = TEAMS.map((team) => team.id)): TeamTaskRow[] {
+export function tasksByTeam(
+  tasks: Task[],
+  people: Person[],
+  teams: { id: string; name: string }[] = TEAMS
+): TeamTaskRow[] {
   const today = todayKey();
-  return teams.map((teamId) => {
+  return teams.map((item) => {
     const row: TeamTaskRow = {
-      teamId,
-      team: TEAMS.find((team) => team.id === teamId)?.name ?? teamId,
+      teamId: item.id,
+      team: item.name,
       open: 0,
       inProgress: 0,
       done: 0,
@@ -124,7 +128,7 @@ export function tasksByTeam(tasks: Task[], people: Person[], teams: TeamId[] = T
     };
     for (const task of tasks) {
       const assignee = people.find((person) => person.userId === task.assigneeUserId);
-      if (!assignee || !personTeams(assignee).includes(teamId)) continue;
+      if (taskTeam(task, assignee) !== item.id) continue;
       row.total += 1;
       if (task.status === "open") row.open += 1;
       else if (task.status === "in_progress") row.inProgress += 1;
