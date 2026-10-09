@@ -141,7 +141,27 @@ await pool.query(`
     detail TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
+
+  ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS kind TEXT NOT NULL DEFAULT 'comment';
+  ALTER TABLE task_comments ADD COLUMN IF NOT EXISTS entry_date DATE;
+
+  CREATE TABLE IF NOT EXISTS sheet_days (
+    day DATE PRIMARY KEY,
+    added_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
 `);
+
+// Comments written before the status sheet existed get a date and a kind so they show up as cells.
+// Anything the assignee wrote is their response; everything else is a reviewer comment.
+await pool.query(`UPDATE task_comments SET entry_date = created_at::date WHERE entry_date IS NULL`);
+await pool.query(
+  `UPDATE task_comments c SET kind = 'response'
+   FROM tasks t
+   WHERE c.task_id = t.id AND c.author_user_id = t.assignee_user_id AND c.kind <> 'response'`
+);
+await pool.query(`ALTER TABLE task_comments ALTER COLUMN entry_date SET DEFAULT CURRENT_DATE`);
+await pool.query(`ALTER TABLE task_comments ALTER COLUMN entry_date SET NOT NULL`);
 
 await pool.query(`UPDATE people SET mto = TRUE, role = 'employee' WHERE role = 'mto'`);
 
@@ -191,7 +211,7 @@ const localDate = (value = new Date()) => {
 };
 
 async function readState() {
-  const [people, attendance, leave, tasks, taskComments, taskActivity] = await Promise.all([
+  const [people, attendance, leave, tasks, taskComments, taskActivity, sheetDays] = await Promise.all([
     pool.query(
       `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, work_mode, officer, mto,
               reports_to, to_char(joined, 'YYYY-MM-DD') AS joined
@@ -212,13 +232,14 @@ async function readState() {
        FROM tasks ORDER BY updated_at DESC`
     ),
     pool.query(
-      `SELECT id, task_id, author_user_id, body, created_at
+      `SELECT id, task_id, author_user_id, body, kind, to_char(entry_date, 'YYYY-MM-DD') AS day, created_at
        FROM task_comments ORDER BY created_at ASC`
     ),
     pool.query(
       `SELECT id, task_id, actor_user_id, kind, detail, created_at
        FROM task_activity ORDER BY created_at ASC`
     ),
+    pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day FROM sheet_days ORDER BY day ASC`),
   ]);
 
   return {
@@ -276,6 +297,8 @@ async function readState() {
       taskId: row.task_id,
       authorUserId: row.author_user_id || "",
       body: row.body,
+      kind: row.kind === "response" ? "response" : "comment",
+      day: row.day,
       createdAt: new Date(row.created_at).toISOString(),
     })),
     taskActivity: taskActivity.rows.map((row) => ({
@@ -286,6 +309,7 @@ async function readState() {
       detail: row.detail || "",
       createdAt: new Date(row.created_at).toISOString(),
     })),
+    sheetDays: sheetDays.rows.map((row) => row.day),
   };
 }
 
@@ -1225,15 +1249,100 @@ app.post("/api/tasks/:id/comments", async (req, res) => {
     res.status(404).json({ error: "Task not found." });
     return;
   }
+  if (task.status === "done") {
+    res.status(400).json({ error: "This task is closed. Reopen it to write more." });
+    return;
+  }
   const assignee = await personRow(task.assignee_user_id);
   if (!canCommentOnTask(who, task, assignee)) {
     res.status(403).json({ error: "Only the assignee, the person who assigned it, or a lead of that team can comment." });
     return;
   }
+  const kind = who.user_id === task.assignee_user_id ? "response" : "comment";
   await pool.query(
-    `INSERT INTO task_comments (id, task_id, author_user_id, body) VALUES ($1,$2,$3,$4)`,
-    [crypto.randomUUID(), task.id, who.user_id, text]
+    `INSERT INTO task_comments (id, task_id, author_user_id, body, kind, entry_date) VALUES ($1,$2,$3,$4,$5,$6)`,
+    [crypto.randomUUID(), task.id, who.user_id, text, kind, localDate()]
   );
+  await pool.query(`UPDATE tasks SET updated_at = NOW() WHERE id = $1`, [task.id]);
+  await logActivity(task.id, who.user_id, "comment", kind);
+  res.json({ state: await readState() });
+});
+
+// Admin opens a review-date column on the sheet (today or a previous date) so owners can fill it in.
+app.post("/api/tasks/sheet-days", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role !== "admin") {
+    res.status(403).json({ error: "Only the admin adds columns to the sheet." });
+    return;
+  }
+  const day = String(req.body.day || "");
+  if (!DATE_RE.test(day) || Number.isNaN(new Date(`${day}T00:00:00`).getTime())) {
+    res.status(400).json({ error: "Pick a valid date." });
+    return;
+  }
+  if (day > localDate()) {
+    res.status(400).json({ error: "Columns can be today or a previous date." });
+    return;
+  }
+  await pool.query(`INSERT INTO sheet_days (day, added_by) VALUES ($1, $2) ON CONFLICT (day) DO NOTHING`, [day, who.user_id]);
+  res.json({ state: await readState() });
+});
+
+// One sheet cell: the viewer's own entry for (task, day, kind). Saves, rewrites, or clears it.
+app.put("/api/tasks/:id/cells", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role === "hr") {
+    res.status(403).json({ error: "You cannot write on the task sheet." });
+    return;
+  }
+  const kind = req.body.kind === "response" ? "response" : req.body.kind === "comment" ? "comment" : null;
+  const day = String(req.body.day || "");
+  const text = String(req.body.body || "").trim();
+  if (!kind || !DATE_RE.test(day)) {
+    res.status(400).json({ error: "Pick a valid column." });
+    return;
+  }
+  const existing = await pool.query(`SELECT * FROM tasks WHERE id = $1`, [req.params.id]);
+  const task = existing.rows[0];
+  if (!task) {
+    res.status(404).json({ error: "Task not found." });
+    return;
+  }
+  if (task.status === "done") {
+    res.status(400).json({ error: "This task is closed. Reopen it to write more." });
+    return;
+  }
+  const assignee = await personRow(task.assignee_user_id);
+  if (kind === "response" && who.user_id !== task.assignee_user_id) {
+    res.status(403).json({ error: "Only the task owner writes the response." });
+    return;
+  }
+  if (kind === "comment" && !canCommentOnTask(who, task, assignee)) {
+    res.status(403).json({ error: "Only the assignee, the person who assigned it, or a lead of that team can comment." });
+    return;
+  }
+  const current = await pool.query(
+    `SELECT id FROM task_comments
+     WHERE task_id = $1 AND entry_date = $2 AND kind = $3 AND author_user_id = $4
+     ORDER BY created_at DESC LIMIT 1`,
+    [task.id, day, kind, who.user_id]
+  );
+  const cell = current.rows[0];
+  if (!text) {
+    if (cell) await pool.query(`DELETE FROM task_comments WHERE id = $1`, [cell.id]);
+  } else if (cell) {
+    await pool.query(`UPDATE task_comments SET body = $2 WHERE id = $1`, [cell.id, text]);
+  } else {
+    if (day > localDate()) {
+      res.status(400).json({ error: "That column is in the future." });
+      return;
+    }
+    await pool.query(
+      `INSERT INTO task_comments (id, task_id, author_user_id, body, kind, entry_date) VALUES ($1,$2,$3,$4,$5,$6)`,
+      [crypto.randomUUID(), task.id, who.user_id, text, kind, day]
+    );
+    await logActivity(task.id, who.user_id, "comment", kind);
+  }
   await pool.query(`UPDATE tasks SET updated_at = NOW() WHERE id = $1`, [task.id]);
   res.json({ state: await readState() });
 });

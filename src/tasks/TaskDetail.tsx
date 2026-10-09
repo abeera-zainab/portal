@@ -38,6 +38,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
   const commenter = canCommentOnTask(person, task, db.people);
   const remover = canDeleteTask(person, task);
   const comments = db.taskComments.filter((item) => item.taskId === task.id);
+  const threadDays = [...new Set(comments.map((item) => item.day))].sort();
   const activity = db.taskActivity.filter((item) => item.taskId === task.id);
   const nameOf = (userId: string) => db.people.find((item) => item.userId === userId)?.name ?? "Former member";
 
@@ -297,37 +298,51 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
       </div>
 
       <section className="card">
-        <h2>Comments</h2>
+        <h2>Responses and comments</h2>
         <p className="muted">
           {commenter
-            ? "Discuss the task here. Everyone who can see the task can read the thread."
-            : "Only the assignee, the person who assigned it, and leads of this team can comment."}
+            ? "The same entries as the task sheet, grouped by review date. Everyone who can see the task can read them."
+            : "Only the assignee, the person who assigned it, and leads of this team can write here."}
         </p>
-        {comments.length === 0 ? <p className="muted" style={{ marginTop: 12 }}>No comments yet.</p> : null}
+        {comments.length === 0 ? <p className="muted" style={{ marginTop: 12 }}>Nothing written yet.</p> : null}
         <div className="task-thread">
-          {comments.map((item) => {
-            const author = db.people.find((entry) => entry.userId === item.authorUserId);
-            const role = author ? (author.role === "admin" ? "Admin" : roleTags(author).map((tag) => tag.label).join(" · ")) : "";
-            return (
-              <div key={item.id} className={item.authorUserId === person.userId ? "task-comment mine" : "task-comment"}>
-                <div className="task-comment-head">
-                  <strong>{author?.name ?? "Former member"}</strong>
-                  {role ? <span className="badge team">{role}</span> : null}
-                  <span className="muted">{formatWhen(item.createdAt)}</span>
-                </div>
-                <p className="task-copy">{item.body}</p>
-              </div>
-            );
-          })}
+          {threadDays.map((day) => (
+            <div key={day} className="task-thread-day">
+              <h3 className="task-thread-date">{formatDay(day)}</h3>
+              {comments
+                .filter((item) => item.day === day)
+                .map((item) => {
+                  const author = db.people.find((entry) => entry.userId === item.authorUserId);
+                  const role = author ? (author.role === "admin" ? "Admin" : roleTags(author).map((tag) => tag.label).join(" · ")) : "";
+                  return (
+                    <div key={item.id} className={item.authorUserId === person.userId ? "task-comment mine" : "task-comment"}>
+                      <div className="task-comment-head">
+                        <strong>{author?.name ?? "Former member"}</strong>
+                        <span className={item.kind === "response" ? "badge late" : "badge team"}>
+                          {item.kind === "response" ? "Response" : "Comment"}
+                        </span>
+                        {role ? <span className="muted">{role}</span> : null}
+                        <span className="muted">{formatWhen(item.createdAt)}</span>
+                      </div>
+                      <p className="task-copy">{item.body}</p>
+                    </div>
+                  );
+                })}
+            </div>
+          ))}
         </div>
-        {commenter ? (
+        {task.status === "done" ? (
+          <p className="muted" style={{ marginTop: 14 }}>
+            Task closed. Set the status back to open or in progress to write more.
+          </p>
+        ) : commenter ? (
           <form onSubmit={sendComment} style={{ marginTop: 14 }}>
             <label>
-              Add a comment
+              {worker ? "Add today's response" : "Add a comment"}
               <textarea value={comment} onChange={(event) => setComment(event.target.value)} required />
             </label>
             <button className="btn" type="submit" style={{ marginTop: 12 }}>
-              Post comment
+              {worker ? "Post response" : "Post comment"}
             </button>
           </form>
         ) : null}
@@ -356,7 +371,7 @@ function activityText(item: TaskActivity, nameOf: (userId: string) => string) {
     case "description":
       return "Description updated";
     case "comment":
-      return `Comment from ${nameOf(item.actorUserId)}`;
+      return item.detail === "response" ? `Response from ${nameOf(item.actorUserId)}` : `Comment from ${nameOf(item.actorUserId)}`;
     default:
       return item.detail || "Updated";
   }

@@ -61,11 +61,17 @@ export interface Task {
   completedAt?: string;
 }
 
+export type TaskCommentKind = "response" | "comment";
+
 export interface TaskComment {
   id: string;
   taskId: string;
   authorUserId: string;
   body: string;
+  /** "response" is written by the assignee, "comment" by the admin, assigner, or a team lead. */
+  kind: TaskCommentKind;
+  /** The sheet column (YYYY-MM-DD) this entry belongs to. */
+  day: string;
   createdAt: string;
 }
 
@@ -95,4 +101,6 @@ export interface Database {
   tasks: Task[];
   taskComments: TaskComment[];
   taskActivity: TaskActivity[];
+  /** Review-date columns the admin opened on the task sheet (YYYY-MM-DD). */
+  sheetDays: string[];
 }

@@ -1,20 +1,10 @@
 import { useMemo } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import type { Person, Task, TaskPriority, TaskStatus, TeamId } from "../types";
-import {
-  TEAMS,
-  assignableFor,
-  canAssignTasks,
-  hasLeadRights,
-  isTaskOverdue,
-  personTeams,
-  sharesTeam,
-  teamName,
-  useDatabase,
-  visibleTasks,
-} from "../store";
-import { sortTasks, summarizeTasks } from "./taskStats";
-import { BackLink, DueDate, PriorityBadge, StatusBadge, formatWhen } from "./TaskUi";
+import { canAssignTasks, hasLeadRights, isTaskOverdue, personTeams, sharesTeam, teamName, useDatabase, visibleTasks } from "../store";
+import { priorityLabel, sortTasks, statusLabel } from "./taskStats";
+import { TaskSheet, buildSheetRows } from "./TaskSheet";
+import { BackLink } from "./TaskUi";
 
 type View = "all" | "mine" | "team" | "assigned";
 
@@ -63,8 +53,6 @@ export function TaskList({ person }: { person: Person }) {
     setParams(next, { replace: true });
   };
 
-  const people = useMemo(() => (admin ? assignableFor(person, db.people) : []), [admin, person, db.people]);
-
   const scoped = useMemo(() => {
     const visible = visibleTasks(person, db.tasks, db.people);
     return visible.filter((task) => {
@@ -75,8 +63,6 @@ export function TaskList({ person }: { person: Person }) {
       return true;
     });
   }, [db.tasks, db.people, person, view, team, personFilter]);
-
-  const summary = useMemo(() => summarizeTasks(scoped), [scoped]);
 
   const rows = useMemo(
     () =>
@@ -91,15 +77,16 @@ export function TaskList({ person }: { person: Person }) {
     [scoped, status, priority, overdueOnly]
   );
 
-  const showAssignee = view !== "mine";
-  const showTeam = admin || personTeams(person).length > 1;
-  const columns = 5 + (showAssignee ? 1 : 0) + (showTeam ? 1 : 0);
+  const sheetRows = useMemo(() => buildSheetRows(rows, db.people), [rows, db.people]);
 
-  const chip = (label: string, count: number, active: boolean, onClick: () => void, tone = "") => (
-    <button type="button" className={active ? `chip on ${tone}` : `chip ${tone}`} onClick={onClick}>
-      {label} <strong>{count}</strong>
-    </button>
-  );
+  // Filters arrive from analytics links; the sheet itself has no filter controls.
+  const activeFilters = [
+    status ? `${statusLabel(status).toLowerCase()} tasks` : "",
+    overdueOnly ? "overdue tasks" : "",
+    priority ? `${priorityLabel(priority).toLowerCase()} priority` : "",
+    team ? teamName(team) : "",
+    personFilter ? db.people.find((item) => item.userId === personFilter)?.name ?? "" : "",
+  ].filter(Boolean);
 
   return (
     <div className="manage">
@@ -109,10 +96,10 @@ export function TaskList({ person }: { person: Person }) {
           <h1>Tasks</h1>
           <p className="muted">
             {admin
-              ? "Every task across the teams. Open a task to review it or leave a comment."
+              ? "Every task across the teams. Type your comments straight into the sheet."
               : hasLeadRights(person)
-                ? "Your tasks, your team's tasks, and the tasks you assigned."
-                : "Your tasks and the tasks of people on your team."}
+                ? "Your tasks, your team's tasks, and the tasks you assigned. Owners write responses, reviewers write comments."
+                : "Write your response in today's column. Reviewers reply in the comments column beside it."}
           </p>
         </div>
         <div className="filters">
@@ -145,111 +132,20 @@ export function TaskList({ person }: { person: Person }) {
       ) : null}
 
       <section className="card">
-        <div className="task-summary">
-          {chip("All", summary.total, !status && !overdueOnly, () => set({ status: null, overdue: null }))}
-          {chip("Open", summary.open, status === "open" && !overdueOnly, () => set({ status: "open", overdue: null }))}
-          {chip("In progress", summary.inProgress, status === "in_progress" && !overdueOnly, () =>
-            set({ status: "in_progress", overdue: null })
-          )}
-          {chip("Done", summary.done, status === "done" && !overdueOnly, () => set({ status: "done", overdue: null }))}
-          {chip("Overdue", summary.overdue, overdueOnly, () => set({ overdue: overdueOnly ? null : "1", status: null }), "danger")}
-        </div>
-
-        <div className="row" style={{ marginTop: 14 }}>
-          {admin || personTeams(person).length > 1 ? (
-            <label>
-              Team
-              <select value={team} onChange={(event) => set({ team: event.target.value || null })}>
-                <option value="">All teams</option>
-                {(admin ? TEAMS : TEAMS.filter((item) => personTeams(person).includes(item.id))).map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          {admin ? (
-            <label>
-              Person
-              <select value={personFilter} onChange={(event) => set({ person: event.target.value || null })}>
-                <option value="">Everyone</option>
-                {people.map((item) => (
-                  <option key={item.userId} value={item.userId}>
-                    {item.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <label>
-            Priority
-            <select value={priority} onChange={(event) => set({ priority: event.target.value || null })}>
-              <option value="">Any priority</option>
-              <option value="high">High</option>
-              <option value="medium">Medium</option>
-              <option value="low">Low</option>
-            </select>
-          </label>
-          {status || priority || team || personFilter || overdueOnly ? (
+        {activeFilters.length ? (
+          <div className="filters sheet-filter-note">
+            <span className="muted">Showing {activeFilters.join(" · ")}</span>
             <button
               type="button"
-              className="btn secondary"
+              className="chip"
               onClick={() => set({ status: null, priority: null, team: null, person: null, overdue: null })}
             >
-              Clear filters
+              Show all
             </button>
-          ) : null}
-        </div>
+          </div>
+        ) : null}
 
-        <table>
-          <thead>
-            <tr>
-              <th>Task</th>
-              {showAssignee ? <th>Assignee</th> : null}
-              {showTeam ? <th>Team</th> : null}
-              <th>Priority</th>
-              <th>Due</th>
-              <th>Status</th>
-              <th>Updated</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.length === 0 ? (
-              <tr>
-                <td colSpan={columns}>No tasks match this view.</td>
-              </tr>
-            ) : (
-              rows.map((task) => {
-                const assignee = db.people.find((item) => item.userId === task.assigneeUserId);
-                return (
-                  <tr key={task.id} className={task.status === "done" ? "task-row done" : "task-row"}>
-                    <td>
-                      <Link className="name-btn" to={`/tasks/${task.id}`}>
-                        {task.title}
-                      </Link>
-                      {task.brief ? <small className="task-brief">{task.brief}</small> : null}
-                    </td>
-                    {showAssignee ? <td>{assignee?.name ?? "Former member"}</td> : null}
-                    {showTeam ? (
-                      <td>{assignee ? personTeams(assignee).map((item) => teamName(item)).join(", ") || "—" : "—"}</td>
-                    ) : null}
-                    <td>
-                      <PriorityBadge priority={task.priority} />
-                    </td>
-                    <td>
-                      <DueDate task={task} />
-                    </td>
-                    <td>
-                      <StatusBadge status={task.status} />
-                    </td>
-                    <td>{formatWhen(task.updatedAt)}</td>
-                  </tr>
-                );
-              })
-            )}
-          </tbody>
-        </table>
+        <TaskSheet rows={sheetRows} person={person} />
       </section>
     </div>
   );

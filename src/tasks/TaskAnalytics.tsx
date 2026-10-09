@@ -7,7 +7,6 @@ import type { PeriodBar } from "../PeriodChart";
 import { TEAMS, canAssignTasks, hasLeadRights, isTaskAssignable, personTeams, sharesTeam, useDatabase, visibleTasks } from "../store";
 import { summarizeTasks, taskTrend, tasksByPerson, tasksByTeam } from "./taskStats";
 import { TaskList } from "./TaskList";
-import { BackLink } from "./TaskUi";
 
 const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
@@ -79,7 +78,6 @@ export function TaskAnalytics({ person }: { person: Person }) {
 
   return (
     <section className="manage">
-      <BackLink to={admin ? "/dashboard" : "/"}>← Back</BackLink>
       <div className="manage-head">
         <div>
           <h1>Tasks</h1>

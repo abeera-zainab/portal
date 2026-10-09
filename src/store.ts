@@ -1,5 +1,17 @@
 import { useSyncExternalStore } from "react";
-import type { Database, LeaveRequest, Person, Role, Task, TaskPriority, TaskStatus, TeamId, WorkMode } from "./types";
+import type {
+  Database,
+  LeaveRequest,
+  Person,
+  Role,
+  Task,
+  TaskComment,
+  TaskCommentKind,
+  TaskPriority,
+  TaskStatus,
+  TeamId,
+  WorkMode,
+} from "./types";
 
 export const TEAMS: { id: TeamId; name: string }[] = [
   { id: "offensive", name: "Offensive" },
@@ -11,7 +23,15 @@ export const TEAMS: { id: TeamId; name: string }[] = [
 const SESSION_KEY = "pss-attendance-session";
 const TOKEN_KEY = "pss-attendance-token";
 
-const empty = (): Database => ({ people: [], attendance: [], leave: [], tasks: [], taskComments: [], taskActivity: [] });
+const empty = (): Database => ({
+  people: [],
+  attendance: [],
+  leave: [],
+  tasks: [],
+  taskComments: [],
+  taskActivity: [],
+  sheetDays: [],
+});
 
 let database: Database = empty();
 let sessionUserId: string | null = sessionStorage.getItem(SESSION_KEY);
@@ -431,6 +451,29 @@ export const visibleTasks = (person: Person | null, tasks: Task[], people: Perso
 export const isTaskOverdue = (task: Task, day = todayKey()) =>
   Boolean(task.dueDate && task.status !== "done" && task.dueDate < day);
 
+/**
+ * Whether the viewer may type in a sheet cell. Responses belong to the assignee; comments follow the
+ * thread rules. Nothing new can be written in a future column. `own` is the viewer's existing entry.
+ */
+export const canWriteTaskCell = (
+  person: Person | null,
+  task: Task,
+  kind: TaskCommentKind,
+  day: string,
+  people: Person[],
+  own?: TaskComment
+) => {
+  if (!person || person.role === "hr") return false;
+  if (!own && day > todayKey()) return false;
+  if (kind === "response") return canWorkTask(person, task);
+  return canCommentOnTask(person, task, people);
+};
+
+export const canAddSheetDay = (person: Person | null) => Boolean(person && person.role === "admin");
+
+export const canWriteResponse = (person: Person | null, task: Task, day: string, own?: TaskComment) =>
+  canWriteTaskCell(person, task, "response", day, [], own);
+
 export const createTask = async (input: {
   title: string;
   brief?: string;
@@ -458,6 +501,16 @@ export const updateTask = async (
 
 export const commentOnTask = async (taskId: string, body: string) => {
   await mutate(`/api/tasks/${encodeURIComponent(taskId)}/comments`, "POST", { body });
+};
+
+/** Admin opens a review-date column on the sheet. */
+export const addSheetDay = async (day: string) => {
+  await mutate("/api/tasks/sheet-days", "POST", { day });
+};
+
+/** Saves (or clears, when body is empty) the viewer's entry in one sheet cell. */
+export const saveTaskCell = async (taskId: string, input: { day: string; kind: TaskCommentKind; body: string }) => {
+  await mutate(`/api/tasks/${encodeURIComponent(taskId)}/cells`, "PUT", input);
 };
 
 export const deleteTask = async (taskId: string) => {
