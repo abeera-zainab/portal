@@ -132,7 +132,7 @@ export function TaskForm({ person }: { person: Person }) {
               <textarea
                 value={review}
                 onChange={(event) => setReview(event.target.value)}
-                placeholder="Optional. Posted as today's reviewer comment on the sheet."
+                placeholder="Optional. Posted as today's CISO comment on the sheet."
               />
             </label>
           ) : null}

@@ -72,7 +72,7 @@ export interface TaskComment {
   taskId: string;
   authorUserId: string;
   body: string;
-  /** "response" is written by the assignee, "comment" by the admin, assigner, or a team lead. */
+  /** "response" is the assignee's progress. "comment" is a CISO note written by an admin. */
   kind: TaskCommentKind;
   /** The sheet column (YYYY-MM-DD) this entry belongs to. */
   day: string;

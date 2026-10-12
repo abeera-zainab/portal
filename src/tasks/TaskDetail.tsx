@@ -330,9 +330,11 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
       <section className="card">
         <h2>Responses and comments</h2>
         <p className="muted">
-          {commenter
-            ? "The same entries as the task sheet, grouped by review date. Everyone who can see the task can read them."
-            : "Only the assignee, the person who assigned it, and leads of this team can write here."}
+          {worker
+            ? "Write your progress or status for today. It shows under Comments by Task Owner on the sheet."
+            : commenter
+              ? "Write a CISO comment. It shows under Comments by CISO on the sheet."
+              : "The assigned person writes progress. An admin writes CISO comments."}
         </p>
         {comments.length === 0 ? <p className="muted" style={{ marginTop: 12 }}>Nothing written yet.</p> : null}
         <div className="task-thread">
@@ -349,7 +351,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
                       <div className="task-comment-head">
                         <strong>{author?.name ?? "Former member"}</strong>
                         <span className={item.kind === "response" ? "badge late" : "badge team"}>
-                          {item.kind === "response" ? "Response" : "Comment"}
+                          {item.kind === "response" ? "Progress" : "CISO"}
                         </span>
                         {role ? <span className="muted">{role}</span> : null}
                         <span className="muted">{formatWhen(item.createdAt)}</span>
@@ -368,11 +370,11 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
         ) : commenter ? (
           <form onSubmit={sendComment} style={{ marginTop: 14 }}>
             <label>
-              {worker ? "Add today's response" : "Add a comment"}
+              {worker ? "Add today's progress or status" : "Add a CISO comment"}
               <textarea value={comment} onChange={(event) => setComment(event.target.value)} required />
             </label>
             <button className="btn" type="submit" style={{ marginTop: 12 }}>
-              {worker ? "Post response" : "Post comment"}
+              {worker ? "Post progress" : "Post CISO comment"}
             </button>
           </form>
         ) : null}
@@ -405,7 +407,7 @@ function activityText(item: TaskActivity, nameOf: (userId: string) => string) {
     case "description":
       return "Description updated";
     case "comment":
-      return item.detail === "response" ? `Response from ${nameOf(item.actorUserId)}` : `Comment from ${nameOf(item.actorUserId)}`;
+      return item.detail === "response" ? `Progress from ${nameOf(item.actorUserId)}` : `CISO comment from ${nameOf(item.actorUserId)}`;
     default:
       return item.detail || "Updated";
   }

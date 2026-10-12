@@ -211,8 +211,8 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
               ) : null}
             </tr>
             <tr className="sheet-subrow">
-              {days.map((day, index) => (
-                <SheetHeads key={day} day={day} today={today} first={index === 0} />
+              {days.map((day) => (
+                <SheetHeads key={day} day={day} today={today} />
               ))}
             </tr>
           </thead>
@@ -283,13 +283,12 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
 }
 
 /** Column roles under one review date, worded like the status-tracker spreadsheet. */
-function SheetHeads({ day, today, first }: { day: string; today: string; first: boolean }) {
+function SheetHeads({ day, today }: { day: string; today: string }) {
   const className = day === today ? "sheet-sub today" : "sheet-sub";
-  const label = first ? "Response by Task Owner" : "Status by Task Owner";
   return (
     <>
       <th className={`${className} sheet-group-start`}>
-        {label} <span className="sheet-sub-date">({shortDay(day)})</span>
+        Comments by Task Owner <span className="sheet-sub-date">({shortDay(day)})</span>
       </th>
       <th className={className}>Comments by CISO</th>
     </>
@@ -330,7 +329,7 @@ function SheetDayCells({
           person={person}
           editable={!closed && canWriteTaskCell(person, task, "response", day, people, ownResponse)}
           closed={closed}
-          placeholder={day === today ? "Write your update…" : ""}
+          placeholder={day === today ? "Add your progress or status…" : ""}
         />
       </td>
       <td className={className}>
@@ -344,7 +343,7 @@ function SheetDayCells({
           person={person}
           editable={!closed && canWriteTaskCell(person, task, "comment", day, people, ownComment)}
           closed={closed}
-          placeholder="Add a comment…"
+          placeholder="Add a CISO comment…"
         />
       </td>
     </>
@@ -450,7 +449,7 @@ function SheetCell({
             onChange={(event) => setDraft(event.target.value)}
             onBlur={save}
             onKeyDown={onKeyDown}
-            aria-label={`${kind === "response" ? "Response" : "Comment"} for ${task.title} on ${formatDay(day)}`}
+            aria-label={`${kind === "response" ? "Progress" : "CISO comment"} for ${task.title} on ${formatDay(day)}`}
           />
           {saving ? <small className="sheet-note">Saving…</small> : null}
           {error ? <small className="sheet-note error">{error}</small> : null}

@@ -96,10 +96,10 @@ export function TaskList({ person }: { person: Person }) {
           <h1>Tasks</h1>
           <p className="muted">
             {admin
-              ? "Every task across the teams. Type your comments straight into the sheet."
+              ? "Assigned people write progress in Comments by Task Owner. You write Comments by CISO."
               : hasLeadRights(person)
-                ? "Your tasks, your team's tasks, and the tasks you assigned. Owners write responses, reviewers write comments."
-                : "Write your response in today's column. Reviewers reply in the comments column beside it."}
+                ? "Assigned people write their progress. An admin writes Comments by CISO."
+                : "Write your progress or status in Comments by Task Owner."}
           </p>
         </div>
         <div className="filters">

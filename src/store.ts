@@ -471,11 +471,13 @@ export const canDeleteTask = (person: Person | null, task: Task) => Boolean(pers
 export const leadsTeamOf = (lead: Person, assignee: Person | undefined) =>
   Boolean(assignee && hasLeadRights(lead) && sharesTeam(lead, assignee));
 
-export const canCommentOnTask = (person: Person | null, task: Task, people: Person[]) => {
-  if (!person) return false;
-  if (isTaskOwner(person, task) || canWorkTask(person, task) || person.userId === task.reviewerUserId) return true;
-  const assignee = people.find((item) => item.userId === task.assigneeUserId);
-  return leadsTeamOf(person, assignee);
+/** Comments by CISO on the sheet are written by an admin. */
+export const canWriteCisoComment = (person: Person | null) => Boolean(person && person.role === "admin");
+
+/** The assignee posts progress. An admin posts a CISO comment. */
+export const canCommentOnTask = (person: Person | null, task: Task, _people: Person[]) => {
+  if (!person || person.role === "hr") return false;
+  return canWriteCisoComment(person) || canWorkTask(person, task);
 };
 
 export const canViewTask = (person: Person | null, task: Task, people: Person[]) => {
@@ -492,21 +494,21 @@ export const isTaskOverdue = (task: Task, day = todayKey()) =>
   Boolean(task.dueDate && task.status !== "done" && task.dueDate < day);
 
 /**
- * Whether the viewer may type in a sheet cell. Responses belong to the assignee; comments follow the
- * thread rules. Nothing new can be written in a future column. `own` is the viewer's existing entry.
+ * Whether the viewer may type in a sheet cell. The assignee writes progress in Comments by Task Owner.
+ * An admin writes Comments by CISO. Nothing new can be written in a future column. `own` is the viewer's existing entry.
  */
 export const canWriteTaskCell = (
   person: Person | null,
   task: Task,
   kind: TaskCommentKind,
   day: string,
-  people: Person[],
+  _people: Person[],
   own?: TaskComment
 ) => {
   if (!person || person.role === "hr") return false;
   if (!own && day > todayKey()) return false;
   if (kind === "response") return canWorkTask(person, task);
-  return canCommentOnTask(person, task, people);
+  return canWriteCisoComment(person);
 };
 
 export const canAddSheetDay = (person: Person | null) => Boolean(person && person.role === "admin");

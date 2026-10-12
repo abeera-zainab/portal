@@ -1183,11 +1183,10 @@ const canBeTaskReviewer = (row, assigneeUserId) =>
   row.user_id !== assigneeUserId &&
   (row.role === "admin" || hasLeadRights(row) || isCisoRow(row));
 
-const canCommentOnTask = (who, task, assignee) =>
-  isTaskOwner(who, task) ||
-  who.user_id === task.assignee_user_id ||
-  who.user_id === task.reviewer_user_id ||
-  (hasLeadRights(who) && rowsShareTeam(who, assignee));
+const canWriteCisoComment = (who) => Boolean(who) && who.role === "admin";
+
+const canCommentOnTask = (who, task) =>
+  Boolean(who) && who.role !== "hr" && (canWriteCisoComment(who) || who.user_id === task.assignee_user_id);
 
 async function logActivity(taskId, actorId, kind, detail = "") {
   await pool.query(
@@ -1404,9 +1403,8 @@ app.post("/api/tasks/:id/comments", async (req, res) => {
     res.status(400).json({ error: "This task is closed. Reopen it to write more." });
     return;
   }
-  const assignee = await personRow(task.assignee_user_id);
-  if (!canCommentOnTask(who, task, assignee)) {
-    res.status(403).json({ error: "Only the assignee, the person who assigned it, or a lead of that team can comment." });
+  if (!canCommentOnTask(who, task)) {
+    res.status(403).json({ error: "Only the assigned person can post progress, and only an admin can post a CISO comment." });
     return;
   }
   const kind = who.user_id === task.assignee_user_id ? "response" : "comment";
@@ -1488,13 +1486,12 @@ app.put("/api/tasks/:id/cells", async (req, res) => {
     res.status(400).json({ error: "This task is closed. Reopen it to write more." });
     return;
   }
-  const assignee = await personRow(task.assignee_user_id);
   if (kind === "response" && who.user_id !== task.assignee_user_id) {
-    res.status(403).json({ error: "Only the task owner writes the response." });
+    res.status(403).json({ error: "Only the assigned person writes progress or status." });
     return;
   }
-  if (kind === "comment" && !canCommentOnTask(who, task, assignee)) {
-    res.status(403).json({ error: "Only the assignee, the person who assigned it, or a lead of that team can comment." });
+  if (kind === "comment" && !canWriteCisoComment(who)) {
+    res.status(403).json({ error: "Only an admin writes CISO comments." });
     return;
   }
   const current = await pool.query(
