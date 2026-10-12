@@ -171,6 +171,33 @@ await pool.query(`
 `);
 await pool.query(`
   INSERT INTO task_teams (id, name)
+  SELECT 'hr', 'HR'
+  WHERE NOT EXISTS (
+    SELECT 1 FROM task_teams WHERE id = 'hr' OR lower(btrim(name)) = 'hr'
+  )
+`);
+// "INT Team" was a duplicate of INT. File those tasks under INT and drop the extra label
+// before unknown task values are copied into task_teams.
+await pool.query(`
+  UPDATE tasks AS t
+  SET team = 'ops'
+  FROM task_teams AS tt
+  WHERE t.team = tt.id
+    AND tt.id <> 'ops'
+    AND lower(regexp_replace(btrim(tt.name), '[-_]+', ' ', 'g')) = 'int team'
+`);
+await pool.query(`
+  UPDATE tasks
+  SET team = 'ops'
+  WHERE lower(regexp_replace(btrim(team), '[-_]+', ' ', 'g')) = 'int team'
+`);
+await pool.query(`
+  DELETE FROM task_teams
+  WHERE id <> 'ops'
+    AND lower(regexp_replace(btrim(name), '[-_]+', ' ', 'g')) = 'int team'
+`);
+await pool.query(`
+  INSERT INTO task_teams (id, name)
   SELECT DISTINCT team, team FROM tasks
   WHERE team IS NOT NULL AND team <> '' AND team NOT IN (SELECT id FROM task_teams)
 `);

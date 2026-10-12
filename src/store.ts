@@ -18,6 +18,7 @@ export const TEAMS: { id: TeamId; name: string }[] = [
   { id: "defensive", name: "Defensive" },
   { id: "ops", name: "INT" },
   { id: "product", name: "Product Development" },
+  { id: "hr", name: "HR" },
 ];
 
 const SESSION_KEY = "pss-attendance-session";

@@ -1,6 +1,6 @@
 export type Role = "admin" | "hr" | "team_lead" | "officer" | "employee";
 
-export type TeamId = "offensive" | "defensive" | "ops" | "product";
+export type TeamId = "offensive" | "defensive" | "ops" | "product" | "hr";
 
 export type WorkMode = "wfh" | "remote";
 
