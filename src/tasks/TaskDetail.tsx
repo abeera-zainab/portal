@@ -4,6 +4,7 @@ import { Link, Navigate, useNavigate, useParams } from "react-router-dom";
 import type { Person, Task, TaskActivity, TaskPriority, TaskStatus } from "../types";
 import {
   assignableFor,
+  canChangeTaskStatus,
   canCommentOnTask,
   canDeleteTask,
   canEditTask,
@@ -37,6 +38,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
   const reviewer = db.people.find((item) => item.userId === task.reviewerUserId);
   const editor = canEditTask(person, task);
   const worker = canWorkTask(person, task);
+  const statusEditor = canChangeTaskStatus(person);
   const commenter = canCommentOnTask(person, task, db.people);
   const remover = canDeleteTask(person, task);
   const comments = db.taskComments.filter((item) => item.taskId === task.id);
@@ -80,7 +82,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
 
   const saveWork = (event: FormEvent) => {
     event.preventDefault();
-    void run(() => updateTask(task.id, { description, status }), "Progress saved.");
+    void run(() => updateTask(task.id, { description }), "Progress saved.");
   };
 
   const changeStatus = (next: TaskStatus) => {
@@ -97,7 +99,9 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
         assigneeUserId,
         priority,
         dueDate: dueDate || null,
-        ...(person.role === "admin" ? { team: team || null, reviewerUserId: reviewerUserId || null } : {}),
+        ...(person.role === "admin"
+          ? { team: team || null, reviewerUserId: reviewerUserId || null, status }
+          : {}),
       });
       setEditing(false);
     }, "Task updated.");
@@ -248,10 +252,12 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
               Due date
               <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
             </label>
-            <label>
-              Status
-              <StatusSelect value={status} onChange={setStatus} />
-            </label>
+            {statusEditor ? (
+              <label>
+                Status
+                <StatusSelect value={status} onChange={setStatus} />
+              </label>
+            ) : null}
             <label className="span-2">
               Assignment note
               <textarea value={brief} onChange={(event) => setBrief(event.target.value)} />
@@ -270,7 +276,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
           <h2>Description</h2>
           {worker ? (
             <form onSubmit={saveWork}>
-              <p className="muted">Write what you did and where it stands. Update the status when it changes.</p>
+              <p className="muted">Write what you did and where it stands. An admin opens or closes the task.</p>
               <label style={{ marginTop: 12 }}>
                 Progress and notes
                 <textarea
@@ -281,10 +287,6 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
                 />
               </label>
               <div className="row" style={{ marginTop: 12 }}>
-                <label>
-                  Status
-                  <StatusSelect value={status} onChange={setStatus} />
-                </label>
                 <button className="btn" type="submit">
                   Save progress
                 </button>
@@ -293,7 +295,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
           ) : (
             <>
               <p className="task-copy">{task.description || "No description yet."}</p>
-              {editor && !editing ? (
+              {statusEditor && !editing ? (
                 <div className="row" style={{ marginTop: 14 }}>
                   <label>
                     Status
@@ -365,7 +367,7 @@ function TaskDetailBody({ task, person, backTo }: { task: Task; person: Person; 
         </div>
         {task.status === "done" ? (
           <p className="muted" style={{ marginTop: 14 }}>
-            Task closed. Set the status back to open or in progress to write more.
+            Task closed. An admin must reopen it before anyone can write more.
           </p>
         ) : commenter ? (
           <form onSubmit={sendComment} style={{ marginTop: 14 }}>

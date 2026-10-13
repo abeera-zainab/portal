@@ -4,11 +4,12 @@ import { Link } from "react-router-dom";
 import type { Person, Task, TaskComment, TaskCommentKind, TaskStatus, TaskTeam } from "../types";
 import {
   TEAMS,
+  SHEET_START_DAY,
   addSheetDay,
   canAddSheetDay,
-  canEditTask,
-  canWorkTask,
+  canChangeTaskStatus,
   canWriteTaskCell,
+  renameSheetDay,
   saveTaskCell,
   taskTeam,
   taskTeamLabel,
@@ -107,16 +108,20 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
     return map;
   }, [db.taskComments, rows]);
 
-  // Columns: every date the admin opened, plus any date someone has already written on.
+  // Columns: every date the admin opened from 13 Oct onward, plus any date someone has already written on.
   const days = useMemo(() => {
     const set = new Set<string>(db.sheetDays);
     const ids = new Set(rows.map((row) => row.task.id));
     for (const comment of db.taskComments) if (ids.has(comment.taskId)) set.add(comment.day);
-    return [...set].sort();
+    set.add(SHEET_START_DAY);
+    return [...set].filter((day) => day >= SHEET_START_DAY).sort();
   }, [db.taskComments, db.sheetDays, rows]);
 
   const adminHere = canAddSheetDay(person);
+  const statusEditor = canChangeTaskStatus(person);
   const columns = FIXED_COLUMNS + days.length * 2 + (adminHere ? 1 : 0);
+  const pickMin = SHEET_START_DAY;
+  const pickMax = today < SHEET_START_DAY ? SHEET_START_DAY : today;
 
   const changeStatus = async (task: Task, status: TaskStatus) => {
     try {
@@ -130,6 +135,10 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
     setAddError("");
     if (!pickedDay) {
       setAddError("Pick a date.");
+      return;
+    }
+    if (pickedDay < SHEET_START_DAY) {
+      setAddError("The task sheet starts on 13 Oct 2026.");
       return;
     }
     if (days.includes(pickedDay)) {
@@ -163,11 +172,16 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                 Items
               </th>
               {days.map((day, index) => (
-                <th key={day} colSpan={2} className={`sheet-group sheet-group-start${day === today ? " today" : ""}`}>
-                  <span className="sheet-group-step">{index === 0 ? "Round 1" : `Round ${index + 1}`}</span>
-                  {formatDay(day)}
-                  {day === today ? <span className="sheet-group-today">Today</span> : null}
-                </th>
+                <SheetDayHead
+                  key={day}
+                  day={day}
+                  index={index}
+                  today={today}
+                  admin={adminHere}
+                  pickMin={pickMin}
+                  pickMax={pickMax}
+                  taken={days}
+                />
               ))}
               {adminHere ? (
                 <th rowSpan={2} className="sheet-add sheet-group-start">
@@ -176,7 +190,8 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                       <input
                         type="date"
                         value={pickedDay}
-                        max={today}
+                        min={pickMin}
+                        max={pickMax}
                         aria-label="Review date for the new column"
                         onChange={(event) => setPickedDay(event.target.value)}
                         onKeyDown={(event) => {
@@ -197,10 +212,10 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
                     <button
                       type="button"
                       className="sheet-add-btn"
-                      title="Add a date column (today or a previous date)"
+                      title="Add a date column from 13 Oct onward"
                       aria-label="Add a date column"
                       onClick={() => {
-                        setPickedDay(today);
+                        setPickedDay(pickMax);
                         setPicking(true);
                       }}
                     >
@@ -224,7 +239,6 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
             ) : (
               rows.map((row) => {
                 const { task, assignee } = row;
-                const statusEditor = canWorkTask(person, task) || canEditTask(person, task);
                 return (
                   <tr key={task.id} className={task.status === "done" ? "sheet-row done" : "sheet-row"}>
                     {row.ownerSpan ? (
@@ -279,6 +293,125 @@ export function TaskSheet({ rows, person }: { rows: SheetRow[]; person: Person }
         </table>
       </div>
     </>
+  );
+}
+
+/** Admin edits a date column from the sheet header; owner and CISO entries move with it. */
+function SheetDayHead({
+  day,
+  index,
+  today,
+  admin,
+  pickMin,
+  pickMax,
+  taken,
+}: {
+  day: string;
+  index: number;
+  today: string;
+  admin: boolean;
+  pickMin: string;
+  pickMax: string;
+  taken: string[];
+}) {
+  const [editing, setEditing] = useState(false);
+  const [value, setValue] = useState(day);
+  const [error, setError] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!editing) setValue(day);
+  }, [day, editing]);
+
+  const save = async () => {
+    setError("");
+    if (!value) {
+      setError("Pick a date.");
+      return;
+    }
+    if (value === day) {
+      setEditing(false);
+      return;
+    }
+    if (value < SHEET_START_DAY) {
+      setError("The task sheet starts on 13 Oct 2026.");
+      return;
+    }
+    if (taken.includes(value)) {
+      setError("That date is already on the sheet.");
+      return;
+    }
+    setSaving(true);
+    try {
+      await renameSheetDay(day, value);
+      setEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Could not change the date.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <th colSpan={2} className={`sheet-group sheet-group-start${day === today ? " today" : ""}`}>
+      <span className="sheet-group-step">{index === 0 ? "Round 1" : `Round ${index + 1}`}</span>
+      {editing ? (
+        <div className="sheet-add-form">
+          <input
+            type="date"
+            value={value}
+            min={pickMin}
+            max={pickMax}
+            aria-label={`Change date for round ${index + 1}`}
+            onChange={(event) => setValue(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") void save();
+              if (event.key === "Escape") {
+                setEditing(false);
+                setError("");
+                setValue(day);
+              }
+            }}
+            autoFocus
+          />
+          <button type="button" className="btn" disabled={saving} onClick={() => void save()}>
+            Save
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            disabled={saving}
+            onClick={() => {
+              setEditing(false);
+              setError("");
+              setValue(day);
+            }}
+          >
+            Cancel
+          </button>
+          {error ? <small className="sheet-note error">{error}</small> : null}
+        </div>
+      ) : (
+        <>
+          {admin ? (
+            <button
+              type="button"
+              className="name-btn sheet-day-edit"
+              title="Change this date. Progress and CISO comments move with it."
+              onClick={() => {
+                setValue(day);
+                setEditing(true);
+              }}
+            >
+              {formatDay(day)}
+            </button>
+          ) : (
+            formatDay(day)
+          )}
+          {day === today ? <span className="sheet-group-today">Today</span> : null}
+        </>
+      )}
+    </th>
   );
 }
 

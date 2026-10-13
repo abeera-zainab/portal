@@ -464,6 +464,9 @@ export const isTaskOwner = (person: Person, task: Task) => person.role === "admi
 
 export const canEditTask = (person: Person | null, task: Task) => Boolean(person && isTaskOwner(person, task));
 
+/** Only an admin may open or close a task (change its status). */
+export const canChangeTaskStatus = (person: Person | null) => Boolean(person && person.role === "admin");
+
 export const canWorkTask = (person: Person | null, task: Task) => Boolean(person && task.assigneeUserId === person.userId);
 
 export const canDeleteTask = (person: Person | null, task: Task) => Boolean(person && isTaskOwner(person, task));
@@ -513,6 +516,9 @@ export const canWriteTaskCell = (
 
 export const canAddSheetDay = (person: Person | null) => Boolean(person && person.role === "admin");
 
+/** First review date on the task sheet. Older columns are migrated onto this day. */
+export const SHEET_START_DAY = "2026-10-13";
+
 export const addTaskTeam = async (name: string) => {
   const payload = await mutate("/api/tasks/teams", "POST", { name });
   return payload.teamId ?? "";
@@ -558,6 +564,11 @@ export const commentOnTask = async (taskId: string, body: string) => {
 /** Admin opens a review-date column on the sheet. */
 export const addSheetDay = async (day: string) => {
   await mutate("/api/tasks/sheet-days", "POST", { day });
+};
+
+/** Admin changes a review-date column; owner and CISO entries on that day move with it. */
+export const renameSheetDay = async (from: string, to: string) => {
+  await mutate("/api/tasks/sheet-days", "PATCH", { from, to });
 };
 
 /** Saves (or clears, when body is empty) the viewer's entry in one sheet cell. */

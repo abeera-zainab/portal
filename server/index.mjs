@@ -202,6 +202,25 @@ await pool.query(`
   WHERE team IS NOT NULL AND team <> '' AND team NOT IN (SELECT id FROM task_teams)
 `);
 
+// Task sheet columns start on 13 Oct 2026. Move older review dates and entries onto that day.
+const SHEET_START_DAY = "2026-10-13";
+await pool.query(`INSERT INTO sheet_days (day) VALUES ($1::date) ON CONFLICT (day) DO NOTHING`, [SHEET_START_DAY]);
+await pool.query(
+  `UPDATE task_comments AS c
+   SET entry_date = $1::date
+   WHERE c.entry_date < $1::date
+     AND NOT EXISTS (
+       SELECT 1 FROM task_comments AS x
+       WHERE x.task_id = c.task_id
+         AND x.entry_date = $1::date
+         AND x.kind = c.kind
+         AND x.author_user_id IS NOT DISTINCT FROM c.author_user_id
+     )`,
+  [SHEET_START_DAY]
+);
+await pool.query(`DELETE FROM task_comments WHERE entry_date < $1::date`, [SHEET_START_DAY]);
+await pool.query(`DELETE FROM sheet_days WHERE day < $1::date`, [SHEET_START_DAY]);
+
 // Comments written before the status sheet existed get a date and a kind so they show up as cells.
 // Anything the assignee wrote is their response; everything else is a reviewer comment.
 await pool.query(`UPDATE task_comments SET entry_date = created_at::date WHERE entry_date IS NULL`);
@@ -1280,6 +1299,10 @@ app.patch("/api/tasks/:id", async (req, res) => {
     return;
   }
   const body = req.body || {};
+  if (body.status !== undefined && who.role !== "admin") {
+    res.status(403).json({ error: "Only an admin can open or close a task." });
+    return;
+  }
   const touchesMeta =
     body.title !== undefined ||
     body.brief !== undefined ||
@@ -1289,7 +1312,7 @@ app.patch("/api/tasks/:id", async (req, res) => {
     body.team !== undefined ||
     body.reviewerUserId !== undefined;
   if (touchesMeta && !owner) {
-    res.status(403).json({ error: "You can only update the description and status." });
+    res.status(403).json({ error: "You can only update the description." });
     return;
   }
   if (body.description !== undefined && !assignee && !owner) {
@@ -1442,7 +1465,9 @@ app.post("/api/tasks/teams", async (req, res) => {
   res.json({ state: await readState(), teamId: id });
 });
 
-// Admin opens a review-date column on the sheet (today or a previous date) so owners can fill it in.
+const isValidSheetDay = (day) => DATE_RE.test(day) && !Number.isNaN(new Date(`${day}T00:00:00`).getTime());
+
+// Admin opens a review-date column on the sheet (from 13 Oct 2026 onward) so owners can fill it in.
 app.post("/api/tasks/sheet-days", async (req, res) => {
   const who = await actor(req);
   if (!who || who.role !== "admin") {
@@ -1450,8 +1475,12 @@ app.post("/api/tasks/sheet-days", async (req, res) => {
     return;
   }
   const day = String(req.body.day || "");
-  if (!DATE_RE.test(day) || Number.isNaN(new Date(`${day}T00:00:00`).getTime())) {
+  if (!isValidSheetDay(day)) {
     res.status(400).json({ error: "Pick a valid date." });
+    return;
+  }
+  if (day < SHEET_START_DAY) {
+    res.status(400).json({ error: "The task sheet starts on 13 Oct 2026." });
     return;
   }
   if (day > localDate()) {
@@ -1459,6 +1488,64 @@ app.post("/api/tasks/sheet-days", async (req, res) => {
     return;
   }
   await pool.query(`INSERT INTO sheet_days (day, added_by) VALUES ($1, $2) ON CONFLICT (day) DO NOTHING`, [day, who.user_id]);
+  res.json({ state: await readState() });
+});
+
+// Admin changes a review-date column from the sheet header; entries on that day move with it.
+app.patch("/api/tasks/sheet-days", async (req, res) => {
+  const who = await actor(req);
+  if (!who || who.role !== "admin") {
+    res.status(403).json({ error: "Only the admin can change sheet dates." });
+    return;
+  }
+  const from = String(req.body.from || "");
+  const to = String(req.body.to || "");
+  if (!isValidSheetDay(from) || !isValidSheetDay(to)) {
+    res.status(400).json({ error: "Pick a valid date." });
+    return;
+  }
+  if (to < SHEET_START_DAY) {
+    res.status(400).json({ error: "The task sheet starts on 13 Oct 2026." });
+    return;
+  }
+  if (to > localDate()) {
+    res.status(400).json({ error: "Columns can be today or a previous date." });
+    return;
+  }
+  if (from === to) {
+    res.json({ state: await readState() });
+    return;
+  }
+  const source = await pool.query(`SELECT day FROM sheet_days WHERE day = $1`, [from]);
+  const hasEntries = await pool.query(`SELECT 1 FROM task_comments WHERE entry_date = $1 LIMIT 1`, [from]);
+  if (!source.rowCount && !hasEntries.rowCount) {
+    res.status(404).json({ error: "That date column was not found." });
+    return;
+  }
+  const target = await pool.query(`SELECT day FROM sheet_days WHERE day = $1`, [to]);
+  if (target.rowCount) {
+    res.status(400).json({ error: "That date column is already on the sheet." });
+    return;
+  }
+  await pool.query(
+    `UPDATE task_comments AS c
+     SET entry_date = $2::date
+     WHERE c.entry_date = $1::date
+       AND NOT EXISTS (
+         SELECT 1 FROM task_comments AS x
+         WHERE x.task_id = c.task_id
+           AND x.entry_date = $2::date
+           AND x.kind = c.kind
+           AND x.author_user_id IS NOT DISTINCT FROM c.author_user_id
+       )`,
+    [from, to]
+  );
+  await pool.query(`DELETE FROM task_comments WHERE entry_date = $1::date`, [from]);
+  if (source.rowCount) {
+    await pool.query(`UPDATE sheet_days SET day = $2::date WHERE day = $1::date`, [from, to]);
+  } else {
+    await pool.query(`INSERT INTO sheet_days (day, added_by) VALUES ($1, $2)`, [to, who.user_id]);
+  }
   res.json({ state: await readState() });
 });
 

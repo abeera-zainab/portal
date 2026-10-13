@@ -361,9 +361,5 @@ VALUES ('427265da-f34c-4f0e-8124-2124595b968f', '0aaa439c-07f9-450e-be9c-fac57a2
 ON CONFLICT (id) DO NOTHING;
 
 INSERT INTO sheet_days (day, added_by, created_at)
-VALUES ('2026-10-08', 'PSS001', '2026-10-09T07:20:54.812Z'::timestamptz)
-ON CONFLICT (day) DO NOTHING;
-
-INSERT INTO sheet_days (day, added_by, created_at)
-VALUES ('2026-10-09', 'PSS001', '2026-10-09T07:20:48.008Z'::timestamptz)
+VALUES ('2026-10-13', 'PSS001', '2026-10-13T05:00:00.000Z'::timestamptz)
 ON CONFLICT (day) DO NOTHING;
