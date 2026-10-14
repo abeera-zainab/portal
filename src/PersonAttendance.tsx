@@ -3,7 +3,7 @@ import { Cell, Legend, Pie, PieChart, ResponsiveContainer, Tooltip } from "recha
 import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
 import type { Person } from "./types";
 import { attendanceTotals } from "./attendanceStats";
-import { attendanceStatus, todayKey, useDatabase } from "./store";
+import { attendanceStatus, lateUntilOf, todayKey, useDatabase } from "./store";
 
 const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
@@ -54,7 +54,7 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
   const trend = periodDays(range).map((date) => {
     const day = todayKey(date);
     const beforeJoin = Boolean(person.joined && day < person.joined);
-    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
+    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
     return {
       day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
       onTime: status === "on_time" ? 1 : 0,

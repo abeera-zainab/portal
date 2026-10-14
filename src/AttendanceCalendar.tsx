@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { AttendanceRecord, LeaveRequest } from "./types";
+import type { AttendanceRecord, LateUntil, LeaveRequest } from "./types";
 import { attendanceStatus, todayKey } from "./store";
 
 const FULL_DAY = 8 * 60;
@@ -47,12 +47,12 @@ export function AttendanceCalendar({
   history,
   leave,
   userId,
-  lateAllowed = false,
+  lateUntil = "09:30",
 }: {
   history: AttendanceRecord[];
   leave: LeaveRequest[];
   userId: string;
-  lateAllowed?: boolean;
+  lateUntil?: LateUntil;
 }) {
   const [mode, setMode] = useState<"month" | "week">("month");
   const [cursor, setCursor] = useState(() => new Date());
@@ -111,7 +111,7 @@ export function AttendanceCalendar({
         {cells.map(({ date, outside }) => {
           const key = dayKey(date);
           const record = byDate.get(key);
-          const status = attendanceStatus(userId, history, leave, date, lateAllowed);
+          const status = attendanceStatus(userId, history, leave, date, lateUntil);
           const weekend = status === "weekend";
           const onLeave = status === "leave";
           const minutes =

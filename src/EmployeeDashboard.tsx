@@ -4,7 +4,7 @@ import { ATTENDANCE_BARS, PeriodChart } from "./PeriodChart";
 import { MyTasksCard } from "./tasks/TaskCards";
 import type { Person } from "./types";
 import { monthTotals } from "./attendanceStats";
-import { attendanceStatus, formatClock, personTeams, teamName, todayKey, useDatabase } from "./store";
+import { attendanceStatus, formatClock, lateUntilOf, personTeams, teamName, todayKey, useDatabase } from "./store";
 
 const GREEN = "#1f6b4a";
 const AMBER = "#9a5b12";
@@ -60,7 +60,7 @@ export function EmployeeDashboard({ person }: { person: Person }) {
   const teamLabel = teams.map((team) => teamName(team)).join(", ") || "No team";
   const month = monthTotals(person, db.attendance, db.leave);
   const today = new Date();
-  const todayStatus = attendanceStatus(person.userId, db.attendance, db.leave, today, Boolean(person.lateAllowed));
+  const todayStatus = attendanceStatus(person.userId, db.attendance, db.leave, today, lateUntilOf(person));
   const record = db.attendance.find((item) => item.userId === person.userId && item.date === todayKey(today));
 
   const mix = [
@@ -73,7 +73,7 @@ export function EmployeeDashboard({ person }: { person: Person }) {
   const trend = useMemo(
     () =>
       periodDays(range, person.joined).map((date) => {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
+        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
         return {
           day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
           onTime: status === "on_time" ? 1 : 0,
@@ -83,7 +83,7 @@ export function EmployeeDashboard({ person }: { person: Person }) {
           absent: status === "not_in" || status === "absentee" ? 1 : 0,
         };
       }),
-    [db.attendance, db.leave, person.joined, person.lateAllowed, person.userId, range]
+    [db.attendance, db.leave, person.joined, person.lateUntil, person.lateAllowed, person.userId, range]
   );
 
   const todayLabel = today.toLocaleDateString(undefined, {

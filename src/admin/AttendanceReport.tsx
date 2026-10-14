@@ -3,7 +3,8 @@ import { Link, useParams, useSearchParams } from "react-router-dom";
 import { AttendanceCalendar } from "../AttendanceCalendar";
 import { MarkPresentButton } from "../MarkPresent";
 import { PersonAttendance } from "../PersonAttendance";
-import { attendanceStatus, canEditAttendance, canMarkPresent, dayStatusClass, dayStatusLabel, deleteAttendance, formatClock, formatWorked, hasLeadRights, historyFor, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
+import type { LateUntil } from "../types";
+import { attendanceStatus, canEditAttendance, canMarkPresent, dayStatusClass, dayStatusLabel, deleteAttendance, formatClock, formatWorked, hasLeadRights, historyFor, lateUntilOf, personTeams, saveAttendance, teamName, todayKey, useDatabase, useSession } from "../store";
 import { AssignedTags, canViewPerson, PersonAdjust } from "./PersonDetail";
 
 const BACK: Record<string, { to: string; label: string }> = {
@@ -30,10 +31,10 @@ const timeValue = (iso?: string) => {
   return `${hour}:${minute}`;
 };
 
-function PresentDay({ userId, lateAllowed }: { userId: string; lateAllowed: boolean }) {
+function PresentDay({ userId, lateUntil }: { userId: string; lateUntil: LateUntil }) {
   const db = useDatabase();
   const [day, setDay] = useState(todayKey());
-  const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${day}T12:00:00`), lateAllowed);
+  const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${day}T12:00:00`), lateUntil);
   const record = db.attendance.find((item) => item.userId === userId && item.date === day);
   return (
     <section className="card">
@@ -51,7 +52,7 @@ function PresentDay({ userId, lateAllowed }: { userId: string; lateAllowed: bool
   );
 }
 
-function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllowed: boolean }) {
+function HrAttendanceEditor({ userId, lateUntil }: { userId: string; lateUntil: LateUntil }) {
   const db = useDatabase();
   const history = historyFor(userId);
   const [drafts, setDrafts] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
@@ -136,7 +137,7 @@ function HrAttendanceEditor({ userId, lateAllowed }: { userId: string; lateAllow
                 checkIn: timeValue(record.checkIn),
                 checkOut: timeValue(record.checkOut),
               };
-              const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), lateAllowed);
+              const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), lateUntil);
               return (
                 <tr key={record.date}>
                   <td>{record.date}</td>
@@ -194,7 +195,7 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
   const late = person
     ? history.filter(
         (record) =>
-          attendanceStatus(person.userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), Boolean(person.lateAllowed)) ===
+          attendanceStatus(person.userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), lateUntilOf(person)) ===
           "late"
       ).length
     : 0;
@@ -253,10 +254,10 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
         ) : null}
       </div>
       {mine || session?.role === "hr" ? null : <PersonAdjust person={person} />}
-      {canEditAttendance(session) && !mine ? <HrAttendanceEditor userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
-      {!mine && canMarkPresent(session) ? <PresentDay userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} /> : null}
+      {canEditAttendance(session) && !mine ? <HrAttendanceEditor userId={person.userId} lateUntil={lateUntilOf(person)} /> : null}
+      {!mine && canMarkPresent(session) ? <PresentDay userId={person.userId} lateUntil={lateUntilOf(person)} /> : null}
       <PersonAttendance person={person} title="Attendance" />
-      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateAllowed={Boolean(person.lateAllowed)} />
+      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateUntil={lateUntilOf(person)} />
       <div className="stat-row">
         <div className="card stat">
           <span>Days recorded</span>

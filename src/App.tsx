@@ -34,6 +34,7 @@ import {
   hasLeadRights,
   hasOfficerRank,
   hasTeamLeadRank,
+  lateUntilOf,
   login,
   logout,
   personTeams,
@@ -388,7 +389,7 @@ function TeamTools({ lead }: { lead: Person }) {
               </tr>
             ) : (
               members.map((member) => {
-                const today = attendanceStatus(member.userId, db.attendance, db.leave, new Date(), Boolean(member.lateAllowed));
+                const today = attendanceStatus(member.userId, db.attendance, db.leave, new Date(), lateUntilOf(member));
                 return (
                   <tr key={member.userId}>
                     <td>

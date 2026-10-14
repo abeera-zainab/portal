@@ -13,6 +13,7 @@ import {
   grantLeave,
   isHrPss,
   isPersonActive,
+  lateUntilOf,
   logout,
   personTeams,
   useDatabase,
@@ -124,7 +125,7 @@ function HrTeams() {
                   </tr>
                 ) : (
                   members.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
+                    const status = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), lateUntilOf(person));
                     return (
                       <tr key={person.userId}>
                         <td>

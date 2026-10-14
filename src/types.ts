@@ -4,6 +4,9 @@ export type TeamId = "offensive" | "defensive" | "ops" | "product" | "hr";
 
 export type WorkMode = "wfh" | "remote";
 
+/** Last on-time check-in. After this clock time the day counts as late. */
+export type LateUntil = "09:30" | "10:30" | "11:00";
+
 export interface Person {
   userId: string;
   name: string;
@@ -15,6 +18,9 @@ export interface Person {
   teams?: TeamId[];
   active?: boolean;
   joined?: string;
+  /** Last on-time check-in for this person. Default is 09:30. */
+  lateUntil?: LateUntil;
+  /** True when lateUntil is later than the team default of 09:30. */
   lateAllowed?: boolean;
   officer?: boolean;
   mto?: boolean;

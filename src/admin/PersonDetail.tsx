@@ -17,7 +17,10 @@ import {
   isPersonActive,
   personTeams,
   roleTags,
-  setLateAllowed,
+  LATE_UNTIL_OPTIONS,
+  lateUntilLabel,
+  lateUntilOf,
+  setLateUntil,
   setPersonActive,
   setPersonTags,
   setReportsTo,
@@ -32,7 +35,8 @@ import {
 export function assignedPlaceTags(person: Person) {
   if (person.role === "admin") return [];
   const tags: { id: string; label: string; className: string }[] = [];
-  if (person.lateAllowed) tags.push({ id: "late", label: "Until 11:00", className: "badge late" });
+  const until = lateUntilOf(person);
+  if (until !== "09:30") tags.push({ id: "late", label: `Until ${lateUntilLabel(until)}`, className: "badge late" });
   if (person.workMode === "wfh") tags.push({ id: "wfh", label: "Work from home", className: "badge" });
   if (person.workMode === "remote") tags.push({ id: "remote", label: "Remote", className: "badge remote" });
   return tags;
@@ -45,7 +49,7 @@ export function AssignedTags({ person, showToday = true }: { person: Person; sho
   const status =
     person.role === "admin" || !showToday
       ? null
-      : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), Boolean(person.lateAllowed));
+      : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), lateUntilOf(person));
   const onLeave = status === "leave";
   const lateToday = status === "late";
   const absenteeToday = status === "absentee";
@@ -140,13 +144,17 @@ export function PersonAdjust({ person }: { person: Person }) {
       )}
       {person.role === "admin" ? null : (
         <div className="role-tags">
-          <button
-            type="button"
-            className={person.lateAllowed ? "domain on" : "domain"}
-            onClick={() => void run(() => setLateAllowed(person.userId, !person.lateAllowed))}
-          >
-            Late check-in until 11:00
-          </button>
+          {LATE_UNTIL_OPTIONS.map((option) => (
+            <button
+              key={option.id}
+              type="button"
+              className={lateUntilOf(person) === option.id ? "domain on" : "domain"}
+              onClick={() => void run(() => setLateUntil(person.userId, option.id))}
+              title={`On-time check-in until ${option.label}`}
+            >
+              Until {option.label}
+            </button>
+          ))}
           <button
             type="button"
             className={person.workMode === "wfh" ? "domain on" : "domain"}

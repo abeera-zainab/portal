@@ -11,6 +11,7 @@ import {
   canSeeLate,
   isOnLeave,
   formatClock,
+  lateUntilOf,
   personTeams,
   reviewableLeave,
   teamName,
@@ -80,7 +81,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
     const tally = (date: Date) => {
       const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of members) {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, Boolean(person.lateAllowed));
+        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
         if (status === "weekend") continue;
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
@@ -140,7 +141,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
         .filter((person): person is Person => Boolean(person));
     }
     return members.filter((person) => {
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
+      const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, lateUntilOf(person));
       if (focus.kind === "present") return status === "on_time" || status === "late";
       if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
       return status === focus.kind;
@@ -352,7 +353,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                 </div>
                 <ul>
                   {people.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, Boolean(person.lateAllowed));
+                    const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, lateUntilOf(person));
                     const record = db.attendance.find(
                       (item) => item.userId === person.userId && item.date === todayKey(focus.when)
                     );

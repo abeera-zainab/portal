@@ -1,5 +1,5 @@
 import type { Database, Person } from "./types";
-import { attendanceStatus, todayKey } from "./store";
+import { attendanceStatus, lateUntilOf, todayKey } from "./store";
 
 const eachDay = (from: string, to: string) => {
   const days: string[] = [];
@@ -24,7 +24,7 @@ export function attendanceTotals(person: Person, attendance: Database["attendanc
   let late = 0;
   let weekend = 0;
   for (const day of eachDay(start, today)) {
-    const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), Boolean(person.lateAllowed));
+    const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), lateUntilOf(person));
     if (status === "weekend") weekend += 1;
     else if (status === "leave") leaves += 1;
     else if (status === "late") {
@@ -47,7 +47,7 @@ export function monthTotals(person: Person, attendance: Database["attendance"], 
   let weekend = 0;
   if (start <= today) {
     for (const day of eachDay(start, today)) {
-      const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), Boolean(person.lateAllowed));
+      const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), lateUntilOf(person));
       if (status === "weekend") weekend += 1;
       else if (status === "leave") leaves += 1;
       else if (status === "late") {

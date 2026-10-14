@@ -12,6 +12,7 @@ import {
   formatClock,
   isHrPss,
   isWeekend,
+  lateUntilOf,
   markPresent,
   personTeams,
   teamName,
@@ -97,7 +98,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
   const rows = people.map((person) => {
     const beforeJoin = Boolean(person.joined && day < person.joined);
     const record = db.attendance.find((item) => item.userId === person.userId && item.date === day);
-    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person));
     const checkIn = beforeJoin || !record?.checkIn ? "—" : formatClock(record.checkIn);
     const checkOut = beforeJoin || !record?.checkOut ? "—" : formatClock(record.checkOut);
     const label = beforeJoin ? "Not joined" : !status || status === "weekend" ? "—" : reportStatusLabel(status);
@@ -220,7 +221,7 @@ export function AttendanceList() {
     for (const person of reportPeople) {
       if (person.joined && reportDay < person.joined) continue;
       counts.staff += 1;
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+      const status = attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person));
       if (status === "on_time") counts.present += 1;
       else if (status === "late") counts.late += 1;
       else if (status === "leave") counts.leave += 1;
@@ -314,7 +315,7 @@ export function AttendanceList() {
               const beforeJoin = Boolean(person.joined && reportDay < person.joined);
               const status = beforeJoin
                 ? null
-                : attendanceStatus(person.userId, db.attendance, db.leave, when, Boolean(person.lateAllowed));
+                : attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person));
               const record = db.attendance.find((item) => item.userId === person.userId && item.date === reportDay);
               return (
                 <tr key={person.userId}>

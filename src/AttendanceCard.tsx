@@ -7,6 +7,8 @@ import {
   formatClock,
   formatWorked,
   isOnLeave,
+  lateUntilLabel,
+  lateUntilOf,
   minutesBetween,
   todayKey,
   useDatabase,
@@ -36,8 +38,10 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
     ? record.workedMinutes ?? minutesBetween(record.checkIn, record.checkOut ? new Date(record.checkOut) : now)
     : undefined;
   const onLeave = isOnLeave(person.userId, db.leave);
-  const status = attendanceStatus(person.userId, db.attendance, db.leave, now, Boolean(person.lateAllowed));
+  const until = lateUntilOf(person);
+  const status = attendanceStatus(person.userId, db.attendance, db.leave, now, until);
   const weekend = status === "weekend";
+  const untilLabel = lateUntilLabel(until);
 
   return (
     <section className="card">
@@ -47,13 +51,11 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
           ? "Check-in is closed today."
           : onLeave
           ? "You are on approved leave today."
-          : person.lateAllowed
-            ? "11:00 AM is your last on-time check-in. Checking in after 11:00 AM is late."
-            : "9:30 AM is the last on-time check-in. Checking in after 9:30 AM is late."}
+          : `${untilLabel} is your last on-time check-in. Checking in after ${untilLabel} is late.`}
       </p>
       <div className="role-tags">
         {onLeave ? <span className="badge leave">Leave</span> : null}
-        {person.lateAllowed ? <span className="badge late">Late check-in</span> : null}
+        {until !== "09:30" ? <span className="badge late">Until {untilLabel}</span> : null}
         {person.workMode === "wfh" ? <span className="badge">Work from home</span> : null}
         {person.workMode === "remote" ? <span className="badge remote">Remote</span> : null}
       </div>
