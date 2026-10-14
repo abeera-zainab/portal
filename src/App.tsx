@@ -112,7 +112,7 @@ function StaffShell({ person }: { person: Person }) {
       <div className="admin-main">
         <header className="topbar">
           <div className="brand">
-            <strong>PSS Attendance</strong>
+            <strong>PSS Portal</strong>
             <span>{personTeams(person).length ? personTeams(person).map((team) => teamName(team)).join(", ") : roleLabel(person)}</span>
           </div>
           <div className="who">
@@ -179,7 +179,7 @@ function Login() {
     <div className="login-wrap">
       <form className="card login-card" onSubmit={submit}>
         <img src="/pss-logo.png?v=3" alt="Pak Surveillance Shield" className="logo logo-login" />
-        <h1>PSS Attendance</h1>
+        <h1>PSS Portal</h1>
         <p className="muted">Sign in with your username or email.</p>
         <div className="row" style={{ marginTop: 18 }}>
           <label style={{ flex: 1 }}>

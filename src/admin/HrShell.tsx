@@ -57,7 +57,7 @@ export function HrShell() {
       <div className="admin-main">
         <header className="topbar">
           <div className="brand">
-            <strong>PSS Attendance</strong>
+            <strong>PSS Portal</strong>
             <span>{pss ? "HR PSS" : "HR"}</span>
           </div>
           <div className="who">

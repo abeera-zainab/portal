@@ -15,7 +15,7 @@ const client = new pg.Client({
   port: PG_PORT,
   user: "pss",
   password: "pss",
-  database: "pss_attendance",
+  database: "pss_portal",
   connectionTimeoutMillis: 3000,
 });
 

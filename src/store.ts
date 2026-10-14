@@ -50,8 +50,8 @@ export const TEAMS: { id: TeamId; name: string }[] = [
   { id: "hr", name: "HR" },
 ];
 
-const SESSION_KEY = "pss-attendance-session";
-const TOKEN_KEY = "pss-attendance-token";
+const SESSION_KEY = "pss-portal-session";
+const TOKEN_KEY = "pss-portal-token";
 
 const empty = (): Database => ({
   people: [],

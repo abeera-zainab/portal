@@ -59,7 +59,7 @@ export function AdminShell() {
       <div className="admin-main">
         <header className="topbar">
           <div className="brand">
-            <strong>PSS Attendance</strong>
+            <strong>PSS Portal</strong>
             <span>Admin</span>
           </div>
           <div className="who">

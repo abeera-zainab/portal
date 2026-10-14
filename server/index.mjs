@@ -26,11 +26,11 @@ const pgConfig = {
   port: PG_PORT,
   user: "pss",
   password: "pss",
-  database: "pss_attendance",
+  database: "pss_portal",
 };
 
 async function postgresIsUp() {
-  const client = new pg.Client({ ...pgConfig, connectionTimeoutMillis: 2000 });
+  const client = new pg.Client({ ...pgConfig, database: "postgres", connectionTimeoutMillis: 2000 });
   try {
     await client.connect();
     await client.end();
@@ -40,8 +40,31 @@ async function postgresIsUp() {
   }
 }
 
+async function ensurePortalDatabase() {
+  const admin = new pg.Client({ ...pgConfig, database: "postgres", connectionTimeoutMillis: 5000 });
+  await admin.connect();
+  try {
+    const portal = await admin.query(`SELECT 1 FROM pg_database WHERE datname = 'pss_portal'`);
+    if (portal.rowCount) return;
+    const legacy = await admin.query(`SELECT 1 FROM pg_database WHERE datname = 'pss_attendance'`);
+    if (legacy.rowCount) {
+      await admin.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = 'pss_attendance' AND pid <> pg_backend_pid()`
+      );
+      await admin.query(`ALTER DATABASE pss_attendance RENAME TO pss_portal`);
+      return;
+    }
+    await admin.query(`CREATE DATABASE pss_portal`);
+  } finally {
+    await admin.end();
+  }
+}
+
 async function startDatabase() {
-  if (await postgresIsUp()) return new pg.Pool(pgConfig);
+  if (await postgresIsUp()) {
+    await ensurePortalDatabase();
+    return new pg.Pool(pgConfig);
+  }
   try {
     await embedded.initialise();
   } catch (error) {
@@ -50,7 +73,7 @@ async function startDatabase() {
   }
   await embedded.start();
   try {
-    await embedded.createDatabase("pss_attendance");
+    await ensurePortalDatabase();
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     if (!/already exists/i.test(message)) throw error;
@@ -1693,5 +1716,5 @@ app.use((error, _req, res, _next) => {
 
 app.listen(PORT, () => {
   console.log(`PSS API on http://localhost:${PORT}`);
-  console.log(`PostgreSQL on 127.0.0.1:${PG_PORT} database pss_attendance`);
+  console.log(`PostgreSQL on 127.0.0.1:${PG_PORT} database pss_portal`);
 });

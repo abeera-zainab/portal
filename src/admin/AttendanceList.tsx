@@ -136,7 +136,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>PSS attendance · ${escapeHtml(day)}</title>
+  <title>PSS Portal · ${escapeHtml(day)}</title>
   <style>
     html, body { margin: 0; background: #fffdf8; color: #1c1916; color-scheme: light; }
     body { margin: 32px; font-family: Georgia, "Times New Roman", serif; }
@@ -167,7 +167,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
 <body>
   <header>
     <div>
-      <h1>PSS Attendance</h1>
+      <h1>PSS Portal</h1>
       <p>${escapeHtml(title)}</p>
       <p>${escapeHtml(summary)}</p>
     </div>
