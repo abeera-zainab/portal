@@ -98,7 +98,8 @@ await pool.query(`
   );
 
   ALTER TABLE people ADD COLUMN IF NOT EXISTS late_allowed BOOLEAN NOT NULL DEFAULT FALSE;
-  ALTER TABLE people ADD COLUMN IF NOT EXISTS late_until TEXT NOT NULL DEFAULT '09:30';
+  ALTER TABLE people ADD COLUMN IF NOT EXISTS late_until TEXT NOT NULL DEFAULT '09:00';
+  ALTER TABLE people ALTER COLUMN late_until SET DEFAULT '09:00';
   ALTER TABLE people ADD COLUMN IF NOT EXISTS work_mode TEXT;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS officer BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS mto BOOLEAN NOT NULL DEFAULT FALSE;
@@ -306,48 +307,23 @@ if (existsSync(seedPath)) {
   }
 }
 
-// Late check-in cutoffs after seed load: 09:30 for everyone except the named exceptions.
-await pool.query(`
-  UPDATE people
-  SET late_until = CASE WHEN late_allowed THEN '11:00' ELSE '09:30' END
-  WHERE late_until IS NULL OR late_until NOT IN ('09:30', '10:30', '11:00')
-`);
+// Keep legacy per-person cutoff fields aligned with the shared attendance policy.
 await pool.query(`
   INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, late_until)
-  VALUES ('PSS018', 'Umer Javed', 'umer_javed', 'umerjaved@local.pss', '123123123', 'employee', 'ops', ARRAY['ops']::text[], TRUE, CURRENT_DATE, TRUE, '10:30')
+  VALUES ('PSS018', 'Umer Javed', 'umer_javed', 'umerjaved@local.pss', '123123123', 'employee', 'ops', ARRAY['ops']::text[], TRUE, CURRENT_DATE, FALSE, '09:00')
   ON CONFLICT (user_id) DO UPDATE SET
     name = EXCLUDED.name,
-    late_until = '10:30',
-    late_allowed = TRUE
+    late_until = '09:00',
+    late_allowed = FALSE
 `);
-await pool.query(`UPDATE people SET late_until = '09:30', late_allowed = FALSE WHERE role <> 'admin'`);
-await pool.query(`
-  UPDATE people
-  SET late_until = '11:00', late_allowed = TRUE
-  WHERE user_id = 'PSS015' OR lower(btrim(name)) = 'talha obaid'
-`);
-await pool.query(`
-  UPDATE people
-  SET late_until = '10:30', late_allowed = TRUE
-  WHERE user_id IN ('PSS010', 'PSS012', 'PSS018')
-     OR lower(btrim(name)) IN ('yousaf sani', 'jalal khan', 'umer javed')
-`);
+await pool.query(`UPDATE people SET late_until = '09:00', late_allowed = FALSE`);
 
-const LATE_UNTILS = new Set(["09:30", "10:30", "11:00"]);
-const normalizeLateUntil = (value, lateAllowed = false) => {
-  if (LATE_UNTILS.has(value)) return value;
-  return lateAllowed ? "11:00" : "09:30";
-};
-const lateCutoffAt = (when, lateUntil) => {
+const DEFAULT_LATE_UNTIL = "09:00";
+const lateCutoffAt = (when) => {
   const cutoff = new Date(when);
-  const [hour, minute] = normalizeLateUntil(lateUntil).split(":").map(Number);
+  const [hour, minute] = DEFAULT_LATE_UNTIL.split(":").map(Number);
   cutoff.setHours(hour, minute, 0, 0);
   return cutoff;
-};
-const resolveLateUntil = (body, currentUntil, currentAllowed) => {
-  if (body?.lateUntil !== undefined) return normalizeLateUntil(body.lateUntil, false);
-  if (body?.lateAllowed !== undefined) return body.lateAllowed ? "11:00" : "09:30";
-  return normalizeLateUntil(currentUntil, Boolean(currentAllowed));
 };
 
 const localDate = (value = new Date()) => {
@@ -402,8 +378,8 @@ async function readState() {
       teams: row.teams ?? [],
       active: row.active,
       joined: row.joined || undefined,
-      lateUntil: normalizeLateUntil(row.late_until, row.late_allowed),
-      lateAllowed: normalizeLateUntil(row.late_until, row.late_allowed) !== "09:30",
+      lateUntil: DEFAULT_LATE_UNTIL,
+      lateAllowed: false,
       officer: row.officer,
       mto: row.mto,
       workMode: row.work_mode || null,
@@ -617,9 +593,7 @@ app.post("/api/logout", async (req, res) => {
 app.post("/api/attendance/check-in", async (req, res) => {
   const userId = String(req.body.userId || "");
   const now = new Date();
-  const person = await pool.query(`SELECT late_allowed, late_until FROM people WHERE user_id = $1`, [userId]);
-  const lateUntil = normalizeLateUntil(person.rows[0]?.late_until, person.rows[0]?.late_allowed);
-  const late = now.getTime() > lateCutoffAt(now, lateUntil).getTime();
+  const late = now.getTime() > lateCutoffAt(now).getTime();
   const date = localDate(now);
   const weekday = new Date(`${date}T12:00:00`).getDay();
   if (weekday === 0 || weekday === 6) {
@@ -698,13 +672,12 @@ app.put("/api/attendance", async (req, res) => {
     res.status(400).json({ error: "Check out cannot be before check in." });
     return;
   }
-  const person = await pool.query(`SELECT user_id, late_allowed, late_until FROM people WHERE user_id = $1`, [userId]);
+  const person = await pool.query(`SELECT user_id FROM people WHERE user_id = $1`, [userId]);
   if (!person.rows[0]) {
     res.status(404).json({ error: "Person not found." });
     return;
   }
-  const lateUntil = normalizeLateUntil(person.rows[0].late_until, person.rows[0].late_allowed);
-  const late = checkIn.getTime() > lateCutoffAt(checkIn, lateUntil).getTime();
+  const late = checkIn.getTime() > lateCutoffAt(checkIn).getTime();
   const worked = checkOut ? Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000)) : null;
   await pool.query(
     `INSERT INTO attendance (user_id, date, check_in, check_out, late, worked_minutes)
@@ -813,8 +786,8 @@ app.post("/api/people", async (req, res) => {
       team = managerTeams[0];
     }
   }
-  const lateUntil = role === "admin" ? "09:30" : resolveLateUntil(body, "09:30", false);
-  const lateAllowed = lateUntil !== "09:30";
+  const lateUntil = DEFAULT_LATE_UNTIL;
+  const lateAllowed = false;
   const mto = role !== "admin" && Boolean(body.mto);
   const workMode = role === "admin" ? null : body.workMode || null;
   if (workMode !== null && workMode !== "wfh" && workMode !== "remote") {
@@ -924,8 +897,8 @@ app.patch("/api/people/:userId", async (req, res) => {
       res.status(400).json({ error: "You cannot deactivate the account you are using." });
       return;
     }
-    const lateUntil = resolveLateUntil(req.body, person.late_until, person.late_allowed);
-    const lateAllowed = lateUntil !== "09:30";
+    const lateUntil = DEFAULT_LATE_UNTIL;
+    const lateAllowed = false;
     const workMode = req.body.workMode === undefined ? person.work_mode : req.body.workMode || null;
     if (workMode !== null && workMode !== "wfh" && workMode !== "remote") {
       res.status(400).json({ error: "Choose work from home, remote, or neither." });
@@ -979,13 +952,13 @@ app.patch("/api/people/:userId", async (req, res) => {
     res.status(400).json({ error: "You cannot deactivate the account you are using." });
     return;
   }
-  let lateUntil = resolveLateUntil(req.body, person.late_until, person.late_allowed);
-  let lateAllowed = lateUntil !== "09:30";
+  let lateUntil = DEFAULT_LATE_UNTIL;
+  let lateAllowed = false;
   let workMode = req.body.workMode === undefined ? person.work_mode : req.body.workMode || null;
   let officer = req.body.officer === undefined ? person.officer : Boolean(req.body.officer);
   let mto = req.body.mto === undefined ? person.mto : Boolean(req.body.mto);
   if (role === "admin") {
-    lateUntil = "09:30";
+    lateUntil = DEFAULT_LATE_UNTIL;
     lateAllowed = false;
     workMode = null;
     officer = false;

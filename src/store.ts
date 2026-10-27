@@ -16,28 +16,16 @@ import type {
 
 export type { LateUntil };
 
-export const DEFAULT_LATE_UNTIL: LateUntil = "09:30";
+export const DEFAULT_LATE_UNTIL: LateUntil = "09:00";
 
-export const LATE_UNTIL_OPTIONS: { id: LateUntil; label: string }[] = [
-  { id: "09:30", label: "9:30 AM" },
-  { id: "10:30", label: "10:30 AM" },
-  { id: "11:00", label: "11:00 AM" },
-];
+export const normalizeLateUntil = (_value: unknown, _lateAllowed = false): LateUntil => DEFAULT_LATE_UNTIL;
 
-export const normalizeLateUntil = (value: unknown, lateAllowed = false): LateUntil => {
-  if (value === "09:30" || value === "10:30" || value === "11:00") return value;
-  return lateAllowed ? "11:00" : DEFAULT_LATE_UNTIL;
-};
+export const lateUntilOf = (_person: Pick<Person, "lateUntil" | "lateAllowed"> | null | undefined): LateUntil =>
+  DEFAULT_LATE_UNTIL;
 
-export const lateUntilOf = (person: Pick<Person, "lateUntil" | "lateAllowed"> | null | undefined): LateUntil =>
-  normalizeLateUntil(person?.lateUntil, Boolean(person?.lateAllowed));
-
-export const lateUntilLabel = (until: LateUntil) =>
-  until === "11:00" ? "11:00 AM" : until === "10:30" ? "10:30 AM" : "9:30 AM";
-
-export const lateCutoffFor = (date: Date, lateUntil: LateUntil = DEFAULT_LATE_UNTIL) => {
+export const lateCutoffFor = (date: Date, _lateUntil: LateUntil = DEFAULT_LATE_UNTIL) => {
   const cutoff = new Date(date);
-  const [hour, minute] = lateUntil.split(":").map(Number);
+  const [hour, minute] = DEFAULT_LATE_UNTIL.split(":").map(Number);
   cutoff.setHours(hour, minute, 0, 0);
   return cutoff;
 };
@@ -285,9 +273,8 @@ export const todayKey = (date = new Date()) => {
   return `${date.getFullYear()}-${month}-${day}`;
 };
 
-export const isLateCheckIn = (date: Date, lateUntil: LateUntil | boolean = DEFAULT_LATE_UNTIL) => {
-  const until = typeof lateUntil === "boolean" ? (lateUntil ? "11:00" : DEFAULT_LATE_UNTIL) : lateUntil;
-  return date.getTime() > lateCutoffFor(date, until).getTime();
+export const isLateCheckIn = (date: Date, _lateUntil: LateUntil | boolean = DEFAULT_LATE_UNTIL) => {
+  return date.getTime() > lateCutoffFor(date, DEFAULT_LATE_UNTIL).getTime();
 };
 
 export const isOnLeave = (userId: string, leave: Database["leave"], day = todayKey()) =>
@@ -319,16 +306,15 @@ export const attendanceStatus = (
   attendance: Database["attendance"],
   leave: Database["leave"],
   now = new Date(),
-  lateUntil: LateUntil | boolean = DEFAULT_LATE_UNTIL
+  _lateUntil: LateUntil | boolean = DEFAULT_LATE_UNTIL
 ): DayStatus => {
-  const until = typeof lateUntil === "boolean" ? (lateUntil ? "11:00" : DEFAULT_LATE_UNTIL) : lateUntil;
   const day = todayKey(now);
   if (isWeekend(day)) return "weekend";
   const record = attendance.find((item) => item.userId === userId && item.date === day);
   if (record?.markedPresent) return "on_time";
   if (isOnLeave(userId, leave, day)) return "leave";
   if (!record || !record.checkIn) return "not_in";
-  if (!isLateCheckIn(new Date(record.checkIn), until)) return "on_time";
+  if (!isLateCheckIn(new Date(record.checkIn), DEFAULT_LATE_UNTIL)) return "on_time";
   let cursor = shiftDay(day, -1);
   let priorLate = 0;
   for (let guard = 0; priorLate < 3 && guard < 40; guard += 1) {
@@ -340,7 +326,7 @@ export const attendanceStatus = (
       cursor = shiftDay(cursor, -1);
       continue;
     }
-    if (!checkedInLate(userId, attendance, cursor, until)) break;
+    if (!checkedInLate(userId, attendance, cursor, DEFAULT_LATE_UNTIL)) break;
     priorLate += 1;
     cursor = shiftDay(cursor, -1);
   }
@@ -661,16 +647,6 @@ export const updatePersonAccount = async (
   input: { name: string; email: string; username: string; password?: string }
 ) => {
   await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", input);
-};
-
-export const setLateAllowed = async (userId: string, lateAllowed: boolean) => {
-  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", {
-    lateUntil: lateAllowed ? "11:00" : DEFAULT_LATE_UNTIL,
-  });
-};
-
-export const setLateUntil = async (userId: string, lateUntil: LateUntil) => {
-  await mutate(`/api/people/${encodeURIComponent(userId)}`, "PATCH", { lateUntil });
 };
 
 export const setPersonTags = async (userId: string, tags: { officer: boolean; mto: boolean }) => {

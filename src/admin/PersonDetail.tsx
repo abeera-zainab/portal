@@ -17,10 +17,7 @@ import {
   isPersonActive,
   personTeams,
   roleTags,
-  LATE_UNTIL_OPTIONS,
-  lateUntilLabel,
   lateUntilOf,
-  setLateUntil,
   setPersonActive,
   setPersonTags,
   setReportsTo,
@@ -35,8 +32,6 @@ import {
 export function assignedPlaceTags(person: Person) {
   if (person.role === "admin") return [];
   const tags: { id: string; label: string; className: string }[] = [];
-  const until = lateUntilOf(person);
-  if (until !== "09:30") tags.push({ id: "late", label: `Until ${lateUntilLabel(until)}`, className: "badge late" });
   if (person.workMode === "wfh") tags.push({ id: "wfh", label: "Work from home", className: "badge" });
   if (person.workMode === "remote") tags.push({ id: "remote", label: "Remote", className: "badge remote" });
   return tags;
@@ -144,17 +139,6 @@ export function PersonAdjust({ person }: { person: Person }) {
       )}
       {person.role === "admin" ? null : (
         <div className="role-tags">
-          {LATE_UNTIL_OPTIONS.map((option) => (
-            <button
-              key={option.id}
-              type="button"
-              className={lateUntilOf(person) === option.id ? "domain on" : "domain"}
-              onClick={() => void run(() => setLateUntil(person.userId, option.id))}
-              title={`On-time check-in until ${option.label}`}
-            >
-              Until {option.label}
-            </button>
-          ))}
           <button
             type="button"
             className={person.workMode === "wfh" ? "domain on" : "domain"}

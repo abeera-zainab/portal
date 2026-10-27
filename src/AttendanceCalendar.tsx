@@ -47,7 +47,7 @@ export function AttendanceCalendar({
   history,
   leave,
   userId,
-  lateUntil = "09:30",
+  lateUntil = "09:00",
 }: {
   history: AttendanceRecord[];
   leave: LeaveRequest[];
