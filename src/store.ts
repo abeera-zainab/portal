@@ -289,18 +289,6 @@ export const isWeekend = (day: string) => {
   return weekday === 0 || weekday === 6;
 };
 
-const shiftDay = (day: string, delta: number) => {
-  const date = new Date(`${day}T12:00:00`);
-  date.setDate(date.getDate() + delta);
-  return todayKey(date);
-};
-
-const checkedInLate = (userId: string, attendance: Database["attendance"], day: string, lateUntil: LateUntil) => {
-  const record = attendance.find((item) => item.userId === userId && item.date === day);
-  if (!record || record.markedPresent || !record.checkIn) return false;
-  return isLateCheckIn(new Date(record.checkIn), lateUntil);
-};
-
 export const attendanceStatus = (
   userId: string,
   attendance: Database["attendance"],
@@ -314,23 +302,9 @@ export const attendanceStatus = (
   if (record?.markedPresent) return "on_time";
   if (isOnLeave(userId, leave, day)) return "leave";
   if (!record || !record.checkIn) return "not_in";
+  if (day < todayKey()) return record.late ? "late" : "on_time";
   if (!isLateCheckIn(new Date(record.checkIn), DEFAULT_LATE_UNTIL)) return "on_time";
-  let cursor = shiftDay(day, -1);
-  let priorLate = 0;
-  for (let guard = 0; priorLate < 3 && guard < 40; guard += 1) {
-    if (isWeekend(cursor)) {
-      cursor = shiftDay(cursor, -1);
-      continue;
-    }
-    if (isOnLeave(userId, leave, cursor)) {
-      cursor = shiftDay(cursor, -1);
-      continue;
-    }
-    if (!checkedInLate(userId, attendance, cursor, DEFAULT_LATE_UNTIL)) break;
-    priorLate += 1;
-    cursor = shiftDay(cursor, -1);
-  }
-  return priorLate >= 3 ? "absentee" : "late";
+  return "late";
 };
 
 export const dayStatusLabel = (status: DayStatus, absentLabel = "Not in") => {
