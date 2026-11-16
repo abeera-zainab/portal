@@ -44,11 +44,18 @@ export function AssignedTags({ person, showToday = true }: { person: Person; sho
   const status =
     person.role === "admin" || !showToday
       ? null
-      : attendanceStatus(person.userId, db.attendance, db.leave, new Date(), lateUntilOf(person));
+      : attendanceStatus(
+          person.userId,
+          db.attendance,
+          db.leave,
+          new Date(),
+          lateUntilOf(person),
+          db.publicHolidays,
+          db.workingDays
+        );
   const onLeave = status === "leave";
   const lateToday = status === "late";
-  const absenteeToday = status === "absentee";
-  if (!roles.length && !places.length && !onLeave && !lateToday && !absenteeToday) return null;
+  if (!roles.length && !places.length && !onLeave && !lateToday) return null;
   return (
     <div className="role-tags">
       {roles.map((tag) => (
@@ -66,7 +73,6 @@ export function AssignedTags({ person, showToday = true }: { person: Person; sho
       ))}
       {onLeave ? <span className="badge leave">Leave</span> : null}
       {lateToday ? <span className="badge late">Late</span> : null}
-      {absenteeToday ? <span className="badge no">Absentee</span> : null}
     </div>
   );
 }

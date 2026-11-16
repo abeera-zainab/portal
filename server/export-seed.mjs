@@ -133,9 +133,22 @@ for (const d of sheetDays.rows) {
   lines.push(row("sheet_days", sheetCols, sheetCols.map((col) => d[col]), "ON CONFLICT (day) DO NOTHING"));
 }
 
+const holidays = await client.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, name, added_by, created_at FROM public_holidays ORDER BY date`);
+const holidayCols = ["date", "name", "added_by", "created_at"];
+for (const h of holidays.rows) {
+  lines.push(row("public_holidays", holidayCols, holidayCols.map((col) => h[col]), "ON CONFLICT (date) DO UPDATE SET name = EXCLUDED.name, added_by = EXCLUDED.added_by"));
+}
+
+const workingDays = await client.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, reason, added_by, created_at FROM working_days ORDER BY date`);
+const workingDayCols = ["date", "reason", "added_by", "created_at"];
+for (const w of workingDays.rows) {
+  lines.push(row("working_days", workingDayCols, workingDayCols.map((col) => w[col]), "ON CONFLICT (date) DO UPDATE SET reason = EXCLUDED.reason, added_by = EXCLUDED.added_by"));
+}
+
 await client.end();
 writeFileSync(out, lines.join("\n"), "utf8");
 console.log(
   `Wrote ${path.relative(process.cwd(), out)}: ${people.rowCount} people, ${attendance.rowCount} attendance, ${leave.rowCount} leave, ` +
-    `${tasks.rowCount} tasks, ${taskTeams.rowCount} task teams, ${comments.rowCount} comments, ${activity.rowCount} activity, ${sheetDays.rowCount} sheet days.`
+    `${tasks.rowCount} tasks, ${taskTeams.rowCount} task teams, ${comments.rowCount} comments, ${activity.rowCount} activity, ${sheetDays.rowCount} sheet days, ` +
+    `${holidays.rowCount} public holidays, ${workingDays.rowCount} working days.`
 );

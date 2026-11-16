@@ -1,6 +1,6 @@
 import { useMemo, useState } from "react";
 import type { AttendanceRecord, LateUntil, LeaveRequest } from "./types";
-import { attendanceStatus, todayKey } from "./store";
+import { attendanceStatus, holidayFor, todayKey, useDatabase } from "./store";
 
 const FULL_DAY = 8 * 60;
 const WEEKDAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
@@ -47,13 +47,16 @@ export function AttendanceCalendar({
   history,
   leave,
   userId,
-  lateUntil = "09:00",
+  joined,
+  lateUntil = "09:30",
 }: {
   history: AttendanceRecord[];
   leave: LeaveRequest[];
   userId: string;
+  joined?: string;
   lateUntil?: LateUntil;
 }) {
+  const db = useDatabase();
   const [mode, setMode] = useState<"month" | "week">("month");
   const [cursor, setCursor] = useState(() => new Date());
   const today = todayKey();
@@ -110,10 +113,15 @@ export function AttendanceCalendar({
         ))}
         {cells.map(({ date, outside }) => {
           const key = dayKey(date);
+          const beforeJoin = Boolean(joined && key < joined);
           const record = byDate.get(key);
-          const status = attendanceStatus(userId, history, leave, date, lateUntil);
+          const status = beforeJoin
+            ? null
+            : attendanceStatus(userId, history, leave, date, lateUntil, db.publicHolidays, db.workingDays);
           const weekend = status === "weekend";
           const onLeave = status === "leave";
+          const isHoliday = status === "holiday";
+          const holidayObj = holidayFor(key, db.publicHolidays);
           const minutes =
             record?.workedMinutes ??
             (record?.checkIn && !record.checkOut && key === today
@@ -121,15 +129,31 @@ export function AttendanceCalendar({
               : undefined);
           const open = Boolean(record?.checkIn && !record.checkOut);
           const late = status === "late";
-          const absentee = status === "absentee";
-          const tone = weekend ? "" : onLeave ? "leave" : absentee ? "late" : !record ? "" : late ? "late" : open ? "open" : (minutes ?? 0) >= FULL_DAY ? "full" : "short";
+          const tone =
+            beforeJoin || weekend || isHoliday
+              ? ""
+              : onLeave
+              ? "leave"
+              : !record
+              ? ""
+              : late
+              ? "late"
+              : open
+              ? "open"
+              : (minutes ?? 0) >= FULL_DAY
+              ? "full"
+              : "short";
           const width = minutes === undefined ? 0 : Math.min(100, Math.round((minutes / FULL_DAY) * 100));
           return (
             <div key={key} className={`calendar-day${outside ? " outside" : ""}${key === today ? " today" : ""}`}>
               <strong>{date.getDate()}</strong>
-              {!weekend && onLeave ? <span className="badge leave">Leave</span> : null}
-              {absentee ? <span className="badge no">Absentee</span> : null}
-              {!weekend && !onLeave && minutes !== undefined ? (
+              {!beforeJoin && isHoliday ? (
+                <span className="badge holiday" title={holidayObj?.name || "Holiday"}>
+                  {holidayObj?.name ? holidayObj.name : "Holiday"}
+                </span>
+              ) : null}
+              {!beforeJoin && !isHoliday && !weekend && onLeave ? <span className="badge leave">Leave</span> : null}
+              {!beforeJoin && !isHoliday && !weekend && !onLeave && minutes !== undefined ? (
                 <>
                   <span className={`calendar-hours ${tone}`}>{hoursLabel(minutes)}</span>
                   <span className={`calendar-bar ${tone}`}>

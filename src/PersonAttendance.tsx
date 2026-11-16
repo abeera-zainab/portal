@@ -42,7 +42,7 @@ const periodDays = (mode: "week" | "month") => {
 export function PersonAttendance({ person, title = "Attendance" }: { person: Person; title?: string }) {
   const db = useDatabase();
   const [range, setRange] = useState<"week" | "month">("month");
-  const totals = attendanceTotals(person, db.attendance, db.leave);
+  const totals = attendanceTotals(person, db.attendance, db.leave, db.publicHolidays, db.workingDays);
   const recorded = totals.present + totals.absent + totals.leaves;
   const onTime = Math.max(0, totals.present - totals.late);
   const mix = [
@@ -54,14 +54,16 @@ export function PersonAttendance({ person, title = "Attendance" }: { person: Per
   const trend = periodDays(range).map((date) => {
     const day = todayKey(date);
     const beforeJoin = Boolean(person.joined && day < person.joined);
-    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
+    const status = beforeJoin
+      ? null
+      : attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person), db.publicHolidays, db.workingDays);
     return {
       day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
       onTime: status === "on_time" ? 1 : 0,
       late: status === "late" ? 1 : 0,
       present: status === "on_time" || status === "late" ? 1 : 0,
       leave: status === "leave" ? 1 : 0,
-      absent: status === "not_in" || status === "absentee" ? 1 : 0,
+      absent: status === "not_in" ? 1 : 0,
     };
   });
 

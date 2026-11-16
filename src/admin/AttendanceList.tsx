@@ -10,6 +10,7 @@ import {
   dayStatusClass,
   dayStatusLabel,
   formatClock,
+  holidayFor,
   isHrPss,
   isWeekend,
   lateUntilOf,
@@ -19,6 +20,7 @@ import {
   todayKey,
   useDatabase,
   useSession,
+  workingDayFor,
 } from "../store";
 
 const shiftKey = (day: string, delta: number) => {
@@ -31,6 +33,7 @@ const shiftKey = (day: string, delta: number) => {
 
 const reportStatusLabel = (status: DayStatus) => {
   if (status === "weekend") return "";
+  if (status === "holiday") return "Holiday";
   if (status === "on_time") return "Present";
   if (status === "not_in") return "Absent";
   return dayStatusLabel(status, "Absent");
@@ -48,9 +51,10 @@ function StatusEdit({
   marked?: boolean;
 }) {
   const session = useSession();
+  const db = useDatabase();
   const [error, setError] = useState("");
-  if (!session || !canMarkPresent(session) || !date || date > todayKey() || isWeekend(date)) return null;
-  const editable = status === "not_in" || status === "late" || status === "leave" || status === "absentee";
+  if (!session || !canMarkPresent(session) || !date || date > todayKey() || isWeekend(date, db.workingDays)) return null;
+  const editable = status === "not_in" || status === "late" || status === "leave" || status === "holiday";
   if (!editable && !marked) return null;
 
   const run = async () => {
@@ -86,7 +90,7 @@ const statusTone = (status: DayStatus | null) => {
   if (status === "on_time") return "present";
   if (status === "late") return "late";
   if (status === "leave") return "leave";
-  if (status === "absentee" || status === "not_in") return "absent";
+  if (status === "not_in") return "absent";
   return "plain";
 };
 
@@ -98,7 +102,9 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
   const rows = people.map((person) => {
     const beforeJoin = Boolean(person.joined && day < person.joined);
     const record = db.attendance.find((item) => item.userId === person.userId && item.date === day);
-    const status = beforeJoin ? null : attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person));
+    const status = beforeJoin
+      ? null
+      : attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person), db.publicHolidays, db.workingDays);
     const checkIn = beforeJoin || !record?.checkIn ? "—" : formatClock(record.checkIn);
     const checkOut = beforeJoin || !record?.checkOut ? "—" : formatClock(record.checkOut);
     const label = beforeJoin ? "Not joined" : !status || status === "weekend" ? "—" : reportStatusLabel(status);
@@ -118,7 +124,8 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     },
     {} as Record<string, number>
   );
-  const summary = ["Present", "Late", "Absentee", "Leave", "Absent"]
+  const summary = ["Present", "Late", "Leave", "Absent", "Holiday"]
+    .filter((label) => (counts[label] ?? 0) > 0 || label !== "Holiday")
     .map((label) => `${label}: ${counts[label] ?? 0}`)
     .join(" · ");
   const body = rows
@@ -155,6 +162,7 @@ function downloadDayReport(people: Person[], db: Database, day: string) {
     .status.present { background: #e7f4ec; color: #1f6b4a; }
     .status.late { background: #fff1dc; color: #9a5b12; }
     .status.leave { background: #e7eef8; color: #1d4e89; }
+    .status.holiday { background: #e4eef0; color: #3d6b7a; }
     .status.absent { background: #fde8ee; color: #9f1239; }
     .status.plain { background: #eeeae3; color: #5c534b; }
     @media print {
@@ -214,21 +222,44 @@ export function AttendanceList() {
     .sort((a, b) => a.name.localeCompare(b.name));
   const reportPeople = people.filter((person) => person.role !== "hr" && person.role !== "admin");
 
+  const holiday = holidayFor(reportDay, db.publicHolidays);
+  const isHoliday = Boolean(holiday);
+  const wkDay = workingDayFor(reportDay, db.workingDays);
+  const isWeekendDay = isWeekend(reportDay, db.workingDays);
+
   // Head count for the selected day, recomputed whenever the day or the data changes.
   const dayCounts = useMemo(() => {
     const when = new Date(`${reportDay}T12:00:00`);
-    const counts = { present: 0, late: 0, absent: 0, leave: 0, staff: 0, weekend: isWeekend(reportDay) };
+    const counts = {
+      present: 0,
+      late: 0,
+      absent: 0,
+      leave: 0,
+      holiday: 0,
+      staff: 0,
+      weekend: isWeekendDay,
+      isHoliday,
+    };
     for (const person of reportPeople) {
       if (person.joined && reportDay < person.joined) continue;
       counts.staff += 1;
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person));
+      const status = attendanceStatus(
+        person.userId,
+        db.attendance,
+        db.leave,
+        when,
+        lateUntilOf(person),
+        db.publicHolidays,
+        db.workingDays
+      );
       if (status === "on_time") counts.present += 1;
       else if (status === "late") counts.late += 1;
       else if (status === "leave") counts.leave += 1;
-      else if (status === "not_in" || status === "absentee") counts.absent += 1;
+      else if (status === "holiday") counts.holiday += 1;
+      else if (status === "not_in") counts.absent += 1;
     }
     return counts;
-  }, [reportPeople, reportDay, db.attendance, db.leave]);
+  }, [reportPeople, reportDay, db.attendance, db.leave, db.publicHolidays, db.workingDays, isWeekendDay, isHoliday]);
 
   return (
     <section className="manage">
@@ -273,6 +304,25 @@ export function AttendanceList() {
           ) : null}
         </form>
       </div>
+
+      {holiday ? (
+        <div className="card" style={{ background: "#eef6f8", borderColor: "#c4dfe6", marginBottom: 16 }}>
+          <strong>🎉 Public Holiday: {holiday.name}</strong>
+          <p className="muted" style={{ margin: "4px 0 0" }}>
+            This day is designated as a Public Holiday. Staff are not expected to check in and are not counted as absent.
+          </p>
+        </div>
+      ) : null}
+
+      {wkDay ? (
+        <div className="card" style={{ background: "#f2f9f4", borderColor: "#cce8d6", marginBottom: 16 }}>
+          <strong>💼 Working Weekend Day{wkDay.reason ? `: ${wkDay.reason}` : ""}</strong>
+          <p className="muted" style={{ margin: "4px 0 0" }}>
+            This weekend is considered an active working day. Check-in is open and normal attendance applies.
+          </p>
+        </div>
+      ) : null}
+
       <div className="dash-stats">
         <article className="card stat">
           <span>Total team</span>
@@ -284,15 +334,17 @@ export function AttendanceList() {
         </article>
         <article className="card stat">
           <span>Late</span>
-          <strong className="tone-amber">{dayCounts.weekend ? "—" : dayCounts.late}</strong>
+          <strong className="tone-amber">{dayCounts.weekend || dayCounts.isHoliday ? "—" : dayCounts.late}</strong>
         </article>
         <article className="card stat">
           <span>Absent</span>
-          <strong className="tone-absent">{dayCounts.weekend ? "—" : dayCounts.absent}</strong>
+          <strong className="tone-absent">{dayCounts.weekend || dayCounts.isHoliday ? "—" : dayCounts.absent}</strong>
         </article>
         <article className="card stat">
-          <span>On leave</span>
-          <strong className="tone-leave">{dayCounts.weekend ? "—" : dayCounts.leave}</strong>
+          <span>{dayCounts.isHoliday ? "Holiday" : "On leave"}</span>
+          <strong className={dayCounts.isHoliday ? "tone-green" : "tone-leave"}>
+            {dayCounts.weekend ? "—" : dayCounts.isHoliday ? dayCounts.holiday : dayCounts.leave}
+          </strong>
         </article>
       </div>
       <div className="table-card">
@@ -310,12 +362,12 @@ export function AttendanceList() {
           </thead>
           <tbody>
             {people.map((person) => {
-              const totals = attendanceTotals(person, db.attendance, db.leave);
+              const totals = attendanceTotals(person, db.attendance, db.leave, db.publicHolidays, db.workingDays);
               const when = new Date(`${reportDay}T12:00:00`);
               const beforeJoin = Boolean(person.joined && reportDay < person.joined);
               const status = beforeJoin
                 ? null
-                : attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person));
+                : attendanceStatus(person.userId, db.attendance, db.leave, when, lateUntilOf(person), db.publicHolidays, db.workingDays);
               const record = db.attendance.find((item) => item.userId === person.userId && item.date === reportDay);
               return (
                 <tr key={person.userId}>

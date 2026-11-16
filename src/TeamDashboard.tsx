@@ -81,8 +81,17 @@ export function TeamDashboard({ lead }: { lead: Person }) {
     const tally = (date: Date) => {
       const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of members) {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
-        if (status === "weekend") continue;
+        if (person.joined && todayKey(date) < person.joined) continue;
+        const status = attendanceStatus(
+          person.userId,
+          db.attendance,
+          db.leave,
+          date,
+          lateUntilOf(person),
+          db.publicHolidays,
+          db.workingDays
+        );
+        if (status === "weekend" || status === "holiday") continue;
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
@@ -141,9 +150,18 @@ export function TeamDashboard({ lead }: { lead: Person }) {
         .filter((person): person is Person => Boolean(person));
     }
     return members.filter((person) => {
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, lateUntilOf(person));
+      if (person.joined && todayKey(focus.when) < person.joined) return false;
+      const status = attendanceStatus(
+        person.userId,
+        db.attendance,
+        db.leave,
+        focus.when,
+        lateUntilOf(person),
+        db.publicHolidays,
+        db.workingDays
+      );
       if (focus.kind === "present") return status === "on_time" || status === "late";
-      if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
+      if (focus.kind === "not_in") return status === "not_in";
       return status === focus.kind;
     });
   }, [db, focus, lead, members]);
@@ -183,7 +201,7 @@ export function TeamDashboard({ lead }: { lead: Person }) {
   return (
     <>
       <p className="muted">
-        {todayLabel}. People who report to you{teamLabel ? ` · ${teamLabel}` : ""}. Click a count or a chart to see who it includes. A fourth late day in a row counts as absent.
+        {todayLabel}. People who report to you{teamLabel ? ` · ${teamLabel}` : ""}. Click a count or a chart to see who it includes. Check-ins after 9:30 AM are late.
       </p>
 
       <div className="dash-stats">
@@ -353,7 +371,15 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                 </div>
                 <ul>
                   {people.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, lateUntilOf(person));
+                    const status = attendanceStatus(
+                      person.userId,
+                      db.attendance,
+                      db.leave,
+                      focus.when,
+                      lateUntilOf(person),
+                      db.publicHolidays,
+                      db.workingDays
+                    );
                     const record = db.attendance.find(
                       (item) => item.userId === person.userId && item.date === todayKey(focus.when)
                     );
@@ -364,11 +390,11 @@ export function TeamDashboard({ lead }: { lead: Person }) {
                           ? leaveSpan(person) || "On leave"
                           : status === "late"
                             ? "Late"
-                            : status === "absentee"
-                              ? "Absentee"
                             : status === "on_time"
                               ? "On time"
-                              : "Absent";
+                              : status === "holiday"
+                                ? "Holiday"
+                                : "Absent";
                     return (
                       <li key={person.userId}>
                         <Link className="roster-person roster-row" to={attendanceHref(person.userId, "team")}>

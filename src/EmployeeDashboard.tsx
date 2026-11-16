@@ -47,8 +47,8 @@ const periodDays = (mode: "week" | "month", joined?: string) => {
 const statusLabel = (status: string) => {
   if (status === "on_time") return "On time";
   if (status === "late") return "Late";
-  if (status === "absentee") return "Absentee";
   if (status === "leave") return "On leave";
+  if (status === "holiday") return "Holiday";
   if (status === "weekend") return "—";
   return "Not in";
 };
@@ -58,9 +58,18 @@ export function EmployeeDashboard({ person }: { person: Person }) {
   const [range, setRange] = useState<"week" | "month">("month");
   const teams = personTeams(person);
   const teamLabel = teams.map((team) => teamName(team)).join(", ") || "No team";
-  const month = monthTotals(person, db.attendance, db.leave);
+  const month = monthTotals(person, db.attendance, db.leave, new Date(), db.publicHolidays, db.workingDays);
   const today = new Date();
-  const todayStatus = attendanceStatus(person.userId, db.attendance, db.leave, today, lateUntilOf(person));
+  const todayStatus = attendanceStatus(
+    person.userId,
+    db.attendance,
+    db.leave,
+    today,
+    lateUntilOf(person),
+    db.publicHolidays,
+    db.workingDays
+  );
+  const beforeJoin = Boolean(person.joined && todayKey(today) < person.joined);
   const record = db.attendance.find((item) => item.userId === person.userId && item.date === todayKey(today));
 
   const mix = [
@@ -73,17 +82,25 @@ export function EmployeeDashboard({ person }: { person: Person }) {
   const trend = useMemo(
     () =>
       periodDays(range, person.joined).map((date) => {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
+        const status = attendanceStatus(
+          person.userId,
+          db.attendance,
+          db.leave,
+          date,
+          lateUntilOf(person),
+          db.publicHolidays,
+          db.workingDays
+        );
         return {
           day: date.toLocaleDateString(undefined, { month: "short", day: "numeric" }),
           onTime: status === "on_time" ? 1 : 0,
           late: status === "late" ? 1 : 0,
           present: status === "on_time" || status === "late" ? 1 : 0,
           leave: status === "leave" ? 1 : 0,
-          absent: status === "not_in" || status === "absentee" ? 1 : 0,
+          absent: status === "not_in" ? 1 : 0,
         };
       }),
-    [db.attendance, db.leave, person.joined, person.lateUntil, person.lateAllowed, person.userId, range]
+    [db.attendance, db.leave, db.publicHolidays, db.workingDays, person.joined, person.lateUntil, person.lateAllowed, person.userId, range]
   );
 
   const todayLabel = today.toLocaleDateString(undefined, {
@@ -131,7 +148,7 @@ export function EmployeeDashboard({ person }: { person: Person }) {
             </thead>
             <tbody>
               <tr>
-                <td>{statusLabel(todayStatus)}</td>
+                <td>{beforeJoin ? "Not joined" : statusLabel(todayStatus)}</td>
                 <td>{formatClock(record?.checkIn)}</td>
                 <td>{formatClock(record?.checkOut)}</td>
               </tr>

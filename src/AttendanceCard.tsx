@@ -6,10 +6,11 @@ import {
   checkOut,
   formatClock,
   formatWorked,
-  isOnLeave,
+  holidayFor,
   minutesBetween,
   todayKey,
   useDatabase,
+  workingDayFor,
 } from "./store";
 
 export function AttendanceCard({ person, heading = "Today" }: { person: Person; heading?: string }) {
@@ -35,45 +36,68 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
   const tracked = record?.checkIn
     ? record.workedMinutes ?? minutesBetween(record.checkIn, record.checkOut ? new Date(record.checkOut) : now)
     : undefined;
-  const onLeave = isOnLeave(person.userId, db.leave);
-  const status = attendanceStatus(person.userId, db.attendance, db.leave, now);
+  const beforeJoin = Boolean(person.joined && todayKey(now) < person.joined);
+  const today = todayKey(now);
+  const holiday = holidayFor(today, db.publicHolidays);
+  const isHoliday = Boolean(holiday);
+  const wkDay = workingDayFor(today, db.workingDays);
+  const status = attendanceStatus(person.userId, db.attendance, db.leave, now, undefined, db.publicHolidays, db.workingDays);
+  const onLeave = status === "leave";
   const weekend = status === "weekend";
 
   return (
     <section className="card">
       <h2>{heading}</h2>
       <p className="muted">
-        {weekend
+        {holiday
+          ? `Today is a public holiday (${holiday.name}). Check-in is closed.`
+          : wkDay
+          ? `Today is a working weekend day${wkDay.reason ? ` (${wkDay.reason})` : ""}. Check in by 9:30 AM.`
+          : weekend
           ? "Check-in is closed today."
+          : beforeJoin
+          ? `Attendance starts on ${person.joined}.`
           : onLeave
           ? "You are on approved leave today."
-          : "Check in by 9:00 AM. Check-ins after 9:00 AM are late."}
+          : "Check in by 9:30 AM. Check-ins after 9:30 AM are late."}
       </p>
       <div className="role-tags">
+        {holiday ? <span className="badge holiday">{holiday.name}</span> : null}
+        {wkDay ? <span className="badge" style={{ background: "#e8f5e9", color: "#1f6b4a" }}>Working Day</span> : null}
         {onLeave ? <span className="badge leave">Leave</span> : null}
         {person.workMode === "wfh" ? <span className="badge">Work from home</span> : null}
         {person.workMode === "remote" ? <span className="badge remote">Remote</span> : null}
       </div>
       <div className="clock">{formatWorked(tracked).replace("—", "0h 0m")}</div>
       <p>
-        {status === "late" ? <span className="badge late">Late</span> : null}
-        {status === "on_time" ? <span className="badge">On time</span> : null}
-        {status === "leave" ? <span className="badge leave">Leave</span> : null}
-        {status === "not_in" ? <span className="badge wait">Not in</span> : null}
-        {status === "absentee" ? <span className="badge no">Absentee</span> : null}
-        {record ? (
-          <span className="muted"> · In {formatClock(record.checkIn)} · Out {formatClock(record.checkOut)}</span>
+        {beforeJoin ? (
+          <span className="muted">Not joined</span>
         ) : (
-          <span className="muted"> · Not checked in yet</span>
+          <>
+            {status === "holiday" ? <span className="badge holiday">Holiday</span> : null}
+            {status === "late" ? <span className="badge late">Late</span> : null}
+            {status === "on_time" ? <span className="badge">On time</span> : null}
+            {status === "leave" ? <span className="badge leave">Leave</span> : null}
+            {status === "not_in" ? <span className="badge wait">Not in</span> : null}
+            {record ? (
+              <span className="muted"> · In {formatClock(record.checkIn)} · Out {formatClock(record.checkOut)}</span>
+            ) : (
+              <span className="muted"> · Not checked in yet</span>
+            )}
+          </>
         )}
       </p>
       <div className="row">
-        <button className="btn" disabled={weekend || Boolean(record?.checkIn)} onClick={() => run(() => checkIn(person.userId))}>
+        <button
+          className="btn"
+          disabled={beforeJoin || weekend || isHoliday || Boolean(record?.checkIn)}
+          onClick={() => run(() => checkIn(person.userId))}
+        >
           Check in
         </button>
         <button
           className="btn secondary"
-          disabled={weekend || !record?.checkIn || Boolean(record.checkOut)}
+          disabled={beforeJoin || weekend || !record?.checkIn || Boolean(record.checkOut)}
           onClick={() => run(() => checkOut(person.userId))}
         >
           Check out

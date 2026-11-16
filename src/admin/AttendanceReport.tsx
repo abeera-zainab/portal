@@ -31,10 +31,19 @@ const timeValue = (iso?: string) => {
   return `${hour}:${minute}`;
 };
 
-function PresentDay({ userId, lateUntil }: { userId: string; lateUntil: LateUntil }) {
+function PresentDay({ userId, joined, lateUntil }: { userId: string; joined?: string; lateUntil: LateUntil }) {
   const db = useDatabase();
   const [day, setDay] = useState(todayKey());
-  const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${day}T12:00:00`), lateUntil);
+  if (joined && joined > todayKey()) return null;
+  const status = attendanceStatus(
+    userId,
+    db.attendance,
+    db.leave,
+    new Date(`${day}T12:00:00`),
+    lateUntil,
+    db.publicHolidays,
+    db.workingDays
+  );
   const record = db.attendance.find((item) => item.userId === userId && item.date === day);
   return (
     <section className="card">
@@ -43,7 +52,13 @@ function PresentDay({ userId, lateUntil }: { userId: string; lateUntil: LateUnti
       <div className="row" style={{ marginTop: 12, alignItems: "end" }}>
         <label>
           Day
-          <input type="date" max={todayKey()} value={day} onChange={(event) => event.target.value && setDay(event.target.value)} />
+          <input
+            type="date"
+            min={joined}
+            max={todayKey()}
+            value={day}
+            onChange={(event) => event.target.value && setDay(event.target.value)}
+          />
         </label>
         <span className={dayStatusClass(status)}>{dayStatusLabel(status, "Absent")}</span>
         <MarkPresentButton userId={userId} date={day} status={status} marked={record?.markedPresent} />
@@ -52,7 +67,7 @@ function PresentDay({ userId, lateUntil }: { userId: string; lateUntil: LateUnti
   );
 }
 
-function HrAttendanceEditor({ userId, lateUntil }: { userId: string; lateUntil: LateUntil }) {
+function HrAttendanceEditor({ userId, joined, lateUntil }: { userId: string; joined?: string; lateUntil: LateUntil }) {
   const db = useDatabase();
   const history = historyFor(userId);
   const [drafts, setDrafts] = useState<Record<string, { checkIn: string; checkOut: string }>>({});
@@ -102,7 +117,14 @@ function HrAttendanceEditor({ userId, lateUntil }: { userId: string; lateUntil: 
       >
         <label>
           Date
-          <input type="date" value={adding.date} onChange={(event) => setAdding({ ...adding, date: event.target.value })} required />
+          <input
+            type="date"
+            min={joined}
+            max={todayKey()}
+            value={adding.date}
+            onChange={(event) => setAdding({ ...adding, date: event.target.value })}
+            required
+          />
         </label>
         <label>
           Check in
@@ -137,7 +159,15 @@ function HrAttendanceEditor({ userId, lateUntil }: { userId: string; lateUntil: 
                 checkIn: timeValue(record.checkIn),
                 checkOut: timeValue(record.checkOut),
               };
-              const status = attendanceStatus(userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), lateUntil);
+              const status = attendanceStatus(
+                userId,
+                db.attendance,
+                db.leave,
+                new Date(`${record.date}T12:00:00`),
+                lateUntil,
+                db.publicHolidays,
+                db.workingDays
+              );
               return (
                 <tr key={record.date}>
                   <td>{record.date}</td>
@@ -195,11 +225,23 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
   const late = person
     ? history.filter(
         (record) =>
-          attendanceStatus(person.userId, db.attendance, db.leave, new Date(`${record.date}T12:00:00`), lateUntilOf(person)) ===
+          (!person.joined || record.date >= person.joined) &&
+          attendanceStatus(
+            person.userId,
+            db.attendance,
+            db.leave,
+            new Date(`${record.date}T12:00:00`),
+            lateUntilOf(person),
+            db.publicHolidays,
+            db.workingDays
+          ) ===
           "late"
       ).length
     : 0;
-  const minutes = history.reduce((sum, record) => sum + (record.workedMinutes ?? 0), 0);
+  const minutes = history.reduce(
+    (sum, record) => sum + (!person?.joined || record.date >= person.joined ? record.workedMinutes ?? 0 : 0),
+    0
+  );
 
   if (!person) {
     return (
@@ -254,10 +296,14 @@ export function AttendanceReport({ mine = false }: { mine?: boolean }) {
         ) : null}
       </div>
       {mine || session?.role === "hr" ? null : <PersonAdjust person={person} />}
-      {canEditAttendance(session) && !mine ? <HrAttendanceEditor userId={person.userId} lateUntil={lateUntilOf(person)} /> : null}
-      {!mine && canMarkPresent(session) ? <PresentDay userId={person.userId} lateUntil={lateUntilOf(person)} /> : null}
+      {canEditAttendance(session) && !mine ? (
+        <HrAttendanceEditor userId={person.userId} joined={person.joined} lateUntil={lateUntilOf(person)} />
+      ) : null}
+      {!mine && canMarkPresent(session) ? (
+        <PresentDay userId={person.userId} joined={person.joined} lateUntil={lateUntilOf(person)} />
+      ) : null}
       <PersonAttendance person={person} title="Attendance" />
-      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} lateUntil={lateUntilOf(person)} />
+      <AttendanceCalendar history={history} leave={db.leave} userId={person.userId} joined={person.joined} lateUntil={lateUntilOf(person)} />
       <div className="stat-row">
         <div className="card stat">
           <span>Days recorded</span>

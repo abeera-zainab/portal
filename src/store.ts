@@ -12,11 +12,13 @@ import type {
   TaskStatus,
   TeamId,
   WorkMode,
+  PublicHoliday,
+  WorkingDay,
 } from "./types";
 
-export type { LateUntil };
+export type { LateUntil, PublicHoliday, WorkingDay };
 
-export const DEFAULT_LATE_UNTIL: LateUntil = "09:00";
+export const DEFAULT_LATE_UNTIL: LateUntil = "09:30";
 
 export const normalizeLateUntil = (_value: unknown, _lateAllowed = false): LateUntil => DEFAULT_LATE_UNTIL;
 
@@ -50,6 +52,8 @@ const empty = (): Database => ({
   taskActivity: [],
   sheetDays: [],
   taskTeams: [],
+  publicHolidays: [],
+  workingDays: [],
 });
 
 let database: Database = empty();
@@ -282,44 +286,59 @@ export const isOnLeave = (userId: string, leave: Database["leave"], day = todayK
     (request) => request.userId === userId && request.status === "approved" && request.from <= day && request.to >= day
   );
 
-export type DayStatus = "on_time" | "late" | "leave" | "not_in" | "absentee" | "weekend";
+export type DayStatus = "on_time" | "late" | "leave" | "not_in" | "weekend" | "holiday";
 
-export const isWeekend = (day: string) => {
+export const isWeekend = (day: string, workingDays: Database["workingDays"] = database.workingDays) => {
+  if (workingDays?.some((item) => item.date === day)) return false;
   const weekday = new Date(`${day}T12:00:00`).getDay();
   return weekday === 0 || weekday === 6;
 };
+
+export const isPublicHoliday = (day: string, publicHolidays: Database["publicHolidays"] = database.publicHolidays) =>
+  publicHolidays?.some((item) => item.date === day) ?? false;
+
+export const holidayFor = (day: string, publicHolidays: Database["publicHolidays"] = database.publicHolidays) =>
+  publicHolidays?.find((item) => item.date === day);
+
+export const workingDayFor = (day: string, workingDays: Database["workingDays"] = database.workingDays) =>
+  workingDays?.find((item) => item.date === day);
 
 export const attendanceStatus = (
   userId: string,
   attendance: Database["attendance"],
   leave: Database["leave"],
   now = new Date(),
-  _lateUntil: LateUntil | boolean = DEFAULT_LATE_UNTIL
+  _lateUntil: LateUntil | boolean = DEFAULT_LATE_UNTIL,
+  publicHolidays: Database["publicHolidays"] = database.publicHolidays,
+  workingDays: Database["workingDays"] = database.workingDays
 ): DayStatus => {
   const day = todayKey(now);
-  if (isWeekend(day)) return "weekend";
   const record = attendance.find((item) => item.userId === userId && item.date === day);
   if (record?.markedPresent) return "on_time";
+  if (record?.checkIn) {
+    if (day < todayKey()) return record.late ? "late" : "on_time";
+    if (!isLateCheckIn(new Date(record.checkIn), DEFAULT_LATE_UNTIL)) return "on_time";
+    return "late";
+  }
   if (isOnLeave(userId, leave, day)) return "leave";
-  if (!record || !record.checkIn) return "not_in";
-  if (day < todayKey()) return record.late ? "late" : "on_time";
-  if (!isLateCheckIn(new Date(record.checkIn), DEFAULT_LATE_UNTIL)) return "on_time";
-  return "late";
+  if (isPublicHoliday(day, publicHolidays)) return "holiday";
+  if (isWeekend(day, workingDays)) return "weekend";
+  return "not_in";
 };
 
 export const dayStatusLabel = (status: DayStatus, absentLabel = "Not in") => {
   if (status === "on_time") return "On time";
   if (status === "late") return "Late";
   if (status === "leave") return "Leave";
-  if (status === "absentee") return "Absentee";
+  if (status === "holiday") return "Holiday";
   if (status === "weekend") return "—";
   return absentLabel;
 };
 
 export const dayStatusClass = (status: DayStatus) => {
   if (status === "late") return "badge late";
-  if (status === "absentee") return "badge no";
   if (status === "leave") return "badge leave";
+  if (status === "holiday") return "badge holiday";
   if (status === "on_time") return "badge";
   if (status === "weekend") return "badge wait";
   return "badge wait";
@@ -649,6 +668,22 @@ export const deletePerson = async (userId: string) => {
 
 export const updateAccount = async (input: { currentPassword: string; email?: string; password?: string }) => {
   await mutate("/api/account", "PATCH", input);
+};
+
+export const addPublicHoliday = async (date: string, name: string) => {
+  await mutate("/api/holidays", "POST", { date, name });
+};
+
+export const deletePublicHoliday = async (date: string) => {
+  await mutate(`/api/holidays/${encodeURIComponent(date)}`, "DELETE");
+};
+
+export const addWorkingDay = async (date: string, reason: string) => {
+  await mutate("/api/working-days", "POST", { date, reason });
+};
+
+export const deleteWorkingDay = async (date: string) => {
+  await mutate(`/api/working-days/${encodeURIComponent(date)}`, "DELETE");
 };
 
 export const historyFor = (userId: string) =>

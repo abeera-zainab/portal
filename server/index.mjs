@@ -98,8 +98,8 @@ await pool.query(`
   );
 
   ALTER TABLE people ADD COLUMN IF NOT EXISTS late_allowed BOOLEAN NOT NULL DEFAULT FALSE;
-  ALTER TABLE people ADD COLUMN IF NOT EXISTS late_until TEXT NOT NULL DEFAULT '09:00';
-  ALTER TABLE people ALTER COLUMN late_until SET DEFAULT '09:00';
+  ALTER TABLE people ADD COLUMN IF NOT EXISTS late_until TEXT NOT NULL DEFAULT '09:30';
+  ALTER TABLE people ALTER COLUMN late_until SET DEFAULT '09:30';
   ALTER TABLE people ADD COLUMN IF NOT EXISTS work_mode TEXT;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS officer BOOLEAN NOT NULL DEFAULT FALSE;
   ALTER TABLE people ADD COLUMN IF NOT EXISTS mto BOOLEAN NOT NULL DEFAULT FALSE;
@@ -181,6 +181,20 @@ await pool.query(`
   CREATE TABLE IF NOT EXISTS task_teams (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL UNIQUE,
+    added_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS public_holidays (
+    date DATE PRIMARY KEY,
+    name TEXT NOT NULL,
+    added_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+  );
+
+  CREATE TABLE IF NOT EXISTS working_days (
+    date DATE PRIMARY KEY,
+    reason TEXT NOT NULL DEFAULT '',
     added_by TEXT REFERENCES people(user_id) ON DELETE SET NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
   );
@@ -310,15 +324,15 @@ if (existsSync(seedPath)) {
 // Keep legacy per-person cutoff fields aligned with the shared attendance policy.
 await pool.query(`
   INSERT INTO people (user_id, name, username, email, password, role, team, teams, active, joined, late_allowed, late_until)
-  VALUES ('PSS018', 'Umer Javed', 'umer_javed', 'umerjaved@local.pss', '123123123', 'employee', 'ops', ARRAY['ops']::text[], TRUE, CURRENT_DATE, FALSE, '09:00')
+  VALUES ('PSS018', 'Umer Javed', 'umer_javed', 'umerjaved@local.pss', '123123123', 'employee', 'ops', ARRAY['ops']::text[], TRUE, CURRENT_DATE, FALSE, '09:30')
   ON CONFLICT (user_id) DO UPDATE SET
     name = EXCLUDED.name,
-    late_until = '09:00',
+    late_until = '09:30',
     late_allowed = FALSE
 `);
-await pool.query(`UPDATE people SET late_until = '09:00', late_allowed = FALSE`);
+await pool.query(`UPDATE people SET late_until = '09:30', late_allowed = FALSE`);
 
-const DEFAULT_LATE_UNTIL = "09:00";
+const DEFAULT_LATE_UNTIL = "09:30";
 const lateCutoffAt = (when) => {
   const cutoff = new Date(when);
   const [hour, minute] = DEFAULT_LATE_UNTIL.split(":").map(Number);
@@ -333,8 +347,33 @@ const localDate = (value = new Date()) => {
   return `${year}-${month}-${day}`;
 };
 
+const isValidDateKey = (value) => {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const date = new Date(`${value}T12:00:00`);
+  return !Number.isNaN(date.getTime()) && localDate(date) === value;
+};
+
+async function getDaySchedule(dateStr) {
+  const [holidayRes, workingRes] = await Promise.all([
+    pool.query(`SELECT name FROM public_holidays WHERE date = $1`, [dateStr]),
+    pool.query(`SELECT reason FROM working_days WHERE date = $1`, [dateStr]),
+  ]);
+  const isHoliday = holidayRes.rowCount > 0;
+  const isWorkingOverride = workingRes.rowCount > 0;
+  const weekday = new Date(`${dateStr}T12:00:00`).getDay();
+  const isNaturalWeekend = weekday === 0 || weekday === 6;
+
+  if (isHoliday) {
+    return { isHoliday: true, isWorkingDay: false, holidayName: holidayRes.rows[0].name };
+  }
+  if (isWorkingOverride) {
+    return { isHoliday: false, isWorkingDay: true, reason: workingRes.rows[0].reason };
+  }
+  return { isHoliday: false, isWorkingDay: !isNaturalWeekend };
+}
+
 async function readState() {
-  const [people, attendance, leave, tasks, taskComments, taskActivity, sheetDays, taskTeams] = await Promise.all([
+  const [people, attendance, leave, tasks, taskComments, taskActivity, sheetDays, taskTeams, publicHolidays, workingDays] = await Promise.all([
     pool.query(
       `SELECT user_id, name, username, email, role, team, teams, active, late_allowed, late_until, work_mode, officer, mto,
               reports_to, to_char(joined, 'YYYY-MM-DD') AS joined
@@ -364,6 +403,8 @@ async function readState() {
     ),
     pool.query(`SELECT to_char(day, 'YYYY-MM-DD') AS day FROM sheet_days ORDER BY day ASC`),
     pool.query(`SELECT id, name FROM task_teams ORDER BY created_at ASC, name ASC`),
+    pool.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, name FROM public_holidays ORDER BY date ASC`),
+    pool.query(`SELECT to_char(date, 'YYYY-MM-DD') AS date, reason FROM working_days ORDER BY date ASC`),
   ]);
 
   return {
@@ -438,6 +479,8 @@ async function readState() {
     })),
     sheetDays: sheetDays.rows.map((row) => row.day),
     taskTeams: taskTeams.rows.map((row) => ({ id: row.id, name: row.name })),
+    publicHolidays: publicHolidays.rows.map((row) => ({ date: row.date, name: row.name })),
+    workingDays: workingDays.rows.map((row) => ({ date: row.date, reason: row.reason })),
   };
 }
 
@@ -591,12 +634,30 @@ app.post("/api/logout", async (req, res) => {
 });
 
 app.post("/api/attendance/check-in", async (req, res) => {
+  const who = await actor(req);
+  if (!who) {
+    res.status(401).json({ error: "Your session has ended. Sign in again." });
+    return;
+  }
   const userId = String(req.body.userId || "");
+  if (userId !== who.user_id) {
+    res.status(403).json({ error: "You can only check in for your own account." });
+    return;
+  }
   const now = new Date();
   const late = now.getTime() > lateCutoffAt(now).getTime();
   const date = localDate(now);
-  const weekday = new Date(`${date}T12:00:00`).getDay();
-  if (weekday === 0 || weekday === 6) {
+  const person = await pool.query(`SELECT joined FROM people WHERE user_id = $1`, [userId]);
+  if (person.rows[0]?.joined && date < localDate(new Date(`${person.rows[0].joined}T12:00:00`))) {
+    res.status(400).json({ error: "Attendance cannot be recorded before your joining date." });
+    return;
+  }
+  const schedule = await getDaySchedule(date);
+  if (schedule.isHoliday) {
+    res.status(400).json({ error: `Today is a public holiday (${schedule.holidayName}).` });
+    return;
+  }
+  if (!schedule.isWorkingDay) {
     res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
     return;
   }
@@ -616,7 +677,16 @@ app.post("/api/attendance/check-in", async (req, res) => {
 });
 
 app.post("/api/attendance/check-out", async (req, res) => {
+  const who = await actor(req);
+  if (!who) {
+    res.status(401).json({ error: "Your session has ended. Sign in again." });
+    return;
+  }
   const userId = String(req.body.userId || "");
+  if (userId !== who.user_id) {
+    res.status(403).json({ error: "You can only check out for your own account." });
+    return;
+  }
   const now = new Date();
   const date = localDate(now);
   const existing = await pool.query(
@@ -626,6 +696,10 @@ app.post("/api/attendance/check-out", async (req, res) => {
   const row = existing.rows[0];
   if (!row) {
     res.status(400).json({ error: "Check in before you check out." });
+    return;
+  }
+  if (!row.check_in) {
+    res.status(400).json({ error: "A marked-present day does not have a check-in to check out." });
     return;
   }
   if (row.check_out) {
@@ -641,10 +715,10 @@ app.post("/api/attendance/check-out", async (req, res) => {
 });
 
 const clockOn = (date, time) => {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
+  if (!isValidDateKey(date) || !/^\d{2}:\d{2}$/.test(time)) return null;
   const [year, month, day] = date.split("-").map(Number);
   const [hour, minute] = time.split(":").map(Number);
-  if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59) return null;
+  if (hour > 23 || minute > 59) return null;
   return new Date(year, month - 1, day, hour, minute, 0, 0);
 };
 
@@ -663,8 +737,12 @@ app.put("/api/attendance", async (req, res) => {
     res.status(400).json({ error: "Enter a valid date and time." });
     return;
   }
-  const weekday = new Date(`${date}T12:00:00`).getDay();
-  if (weekday === 0 || weekday === 6) {
+  if (date > localDate()) {
+    res.status(400).json({ error: "Choose today or a past day." });
+    return;
+  }
+  const schedule = await getDaySchedule(date);
+  if (!schedule.isWorkingDay && !schedule.isHoliday) {
     res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
     return;
   }
@@ -672,12 +750,23 @@ app.put("/api/attendance", async (req, res) => {
     res.status(400).json({ error: "Check out cannot be before check in." });
     return;
   }
-  const person = await pool.query(`SELECT user_id FROM people WHERE user_id = $1`, [userId]);
+  const person = await pool.query(`SELECT user_id, joined FROM people WHERE user_id = $1`, [userId]);
   if (!person.rows[0]) {
     res.status(404).json({ error: "Person not found." });
     return;
   }
-  const late = checkIn.getTime() > lateCutoffAt(checkIn).getTime();
+  if (person.rows[0].joined && date < localDate(new Date(`${person.rows[0].joined}T12:00:00`))) {
+    res.status(400).json({ error: "Attendance cannot be recorded before the person's joining date." });
+    return;
+  }
+  const existing = await pool.query(
+    `SELECT late FROM attendance WHERE user_id = $1 AND date = $2`,
+    [userId, date]
+  );
+  const late =
+    date < localDate()
+      ? Boolean(existing.rows[0]?.late)
+      : checkIn.getTime() > lateCutoffAt(checkIn).getTime();
   const worked = checkOut ? Math.max(0, Math.round((checkOut.getTime() - checkIn.getTime()) / 60000)) : null;
   await pool.query(
     `INSERT INTO attendance (user_id, date, check_in, check_out, late, worked_minutes)
@@ -686,7 +775,8 @@ app.put("/api/attendance", async (req, res) => {
        check_in = EXCLUDED.check_in,
        check_out = EXCLUDED.check_out,
        late = EXCLUDED.late,
-       worked_minutes = EXCLUDED.worked_minutes`,
+       worked_minutes = EXCLUDED.worked_minutes,
+       marked_present = FALSE`,
     [userId, date, checkIn.toISOString(), checkOut ? checkOut.toISOString() : null, late, worked]
   );
   res.json({ state: await readState() });
@@ -700,6 +790,10 @@ app.delete("/api/attendance", async (req, res) => {
   }
   const userId = String(req.body.userId || "");
   const date = String(req.body.date || "");
+  if (!isValidDateKey(date)) {
+    res.status(400).json({ error: "Enter a valid date." });
+    return;
+  }
   const removed = await pool.query(`DELETE FROM attendance WHERE user_id = $1 AND date = $2`, [userId, date]);
   if (!removed.rowCount) {
     res.status(404).json({ error: "Attendance record not found." });
@@ -717,12 +811,12 @@ app.post("/api/attendance/present", async (req, res) => {
   const userId = String(req.body.userId || "");
   const date = String(req.body.date || "");
   const present = req.body.present !== false;
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+  if (!isValidDateKey(date)) {
     res.status(400).json({ error: "Enter a valid date." });
     return;
   }
-  const weekday = new Date(`${date}T12:00:00`).getDay();
-  if (weekday === 0 || weekday === 6) {
+  const schedule = await getDaySchedule(date);
+  if (!schedule.isWorkingDay && !schedule.isHoliday) {
     res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
     return;
   }
@@ -730,13 +824,17 @@ app.post("/api/attendance/present", async (req, res) => {
     res.status(400).json({ error: "Choose today or a past day." });
     return;
   }
-  const person = await pool.query(`SELECT user_id, role FROM people WHERE user_id = $1`, [userId]);
+  const person = await pool.query(`SELECT user_id, role, joined FROM people WHERE user_id = $1`, [userId]);
   if (!person.rows[0]) {
     res.status(404).json({ error: "Person not found." });
     return;
   }
   if (isHrPss(who) && (person.rows[0].role === "hr" || person.rows[0].role === "admin")) {
     res.status(400).json({ error: "That account cannot be changed." });
+    return;
+  }
+  if (person.rows[0].joined && date < localDate(new Date(`${person.rows[0].joined}T12:00:00`))) {
+    res.status(400).json({ error: "Attendance cannot be recorded before the person's joining date." });
     return;
   }
   if (!present) {
@@ -1679,6 +1777,82 @@ app.delete("/api/leave/:id", async (req, res) => {
     res.status(404).json({ error: "Leave request not found." });
     return;
   }
+  res.json({ state: await readState() });
+});
+
+app.post("/api/holidays", async (req, res) => {
+  const who = await actor(req);
+  if (!who || (who.role !== "admin" && who.role !== "hr")) {
+    res.status(403).json({ error: "Only HR or an admin can manage public holidays." });
+    return;
+  }
+  const date = String(req.body.date || "").trim();
+  const name = String(req.body.name || "").trim();
+  if (!isValidDateKey(date)) {
+    res.status(400).json({ error: "Enter a valid date." });
+    return;
+  }
+  if (!name) {
+    res.status(400).json({ error: "Enter a holiday name." });
+    return;
+  }
+  await pool.query(`DELETE FROM working_days WHERE date = $1`, [date]);
+  await pool.query(
+    `INSERT INTO public_holidays (date, name, added_by) VALUES ($1, $2, $3)
+     ON CONFLICT (date) DO UPDATE SET name = EXCLUDED.name, added_by = EXCLUDED.added_by`,
+    [date, name, who.user_id]
+  );
+  res.json({ state: await readState() });
+});
+
+app.delete("/api/holidays/:date", async (req, res) => {
+  const who = await actor(req);
+  if (!who || (who.role !== "admin" && who.role !== "hr")) {
+    res.status(403).json({ error: "Only HR or an admin can manage public holidays." });
+    return;
+  }
+  const date = String(req.params.date || "").trim();
+  if (!isValidDateKey(date)) {
+    res.status(400).json({ error: "Enter a valid date." });
+    return;
+  }
+  await pool.query(`DELETE FROM public_holidays WHERE date = $1`, [date]);
+  res.json({ state: await readState() });
+});
+
+app.post("/api/working-days", async (req, res) => {
+  const who = await actor(req);
+  if (!who || (who.role !== "admin" && who.role !== "hr")) {
+    res.status(403).json({ error: "Only HR or an admin can manage working days." });
+    return;
+  }
+  const date = String(req.body.date || "").trim();
+  const reason = String(req.body.reason || "").trim();
+  if (!isValidDateKey(date)) {
+    res.status(400).json({ error: "Enter a valid date." });
+    return;
+  }
+  await pool.query(`DELETE FROM public_holidays WHERE date = $1`, [date]);
+  await pool.query(
+    `INSERT INTO working_days (date, reason, added_by) VALUES ($1, $2, $3)
+     ON CONFLICT (date) DO UPDATE SET reason = EXCLUDED.reason, added_by = EXCLUDED.added_by`,
+    [date, reason, who.user_id]
+  );
+  res.json({ state: await readState() });
+});
+
+app.delete("/api/working-days/:date", async (req, res) => {
+  const who = await actor(req);
+  if (!who || (who.role !== "admin" && who.role !== "hr")) {
+    res.status(403).json({ error: "Only HR or an admin can manage working days." });
+    return;
+  }
+  const date = String(req.params.date || "").trim();
+  if (!isValidDateKey(date)) {
+    res.status(400).json({ error: "Enter a valid date." });
+    return;
+  }
+  await pool.query(`DELETE FROM working_days WHERE date = $1`, [date]);
   res.json({ state: await readState() });
 });
 

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { DayStatus } from "./store";
-import { canMarkPresent, isWeekend, markPresent, todayKey, useSession } from "./store";
+import { canMarkPresent, isWeekend, markPresent, todayKey, useDatabase, useSession } from "./store";
 
 export function MarkPresentButton({
   userId,
@@ -14,9 +14,10 @@ export function MarkPresentButton({
   marked?: boolean;
 }) {
   const session = useSession();
+  const db = useDatabase();
   const [error, setError] = useState("");
-  if (!session || !canMarkPresent(session) || !date || date > todayKey() || isWeekend(date)) return null;
-  const editable = status === "not_in" || status === "late" || status === "leave" || status === "absentee";
+  if (!session || !canMarkPresent(session) || !date || date > todayKey() || isWeekend(date, db.workingDays)) return null;
+  const editable = status === "not_in" || status === "late" || status === "leave" || status === "holiday";
   if (!editable && !marked) return null;
 
   const run = async (present: boolean) => {

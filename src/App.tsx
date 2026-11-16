@@ -389,7 +389,17 @@ function TeamTools({ lead }: { lead: Person }) {
               </tr>
             ) : (
               members.map((member) => {
-                const today = attendanceStatus(member.userId, db.attendance, db.leave, new Date(), lateUntilOf(member));
+                const todayKeyValue = todayKey();
+                const beforeJoin = Boolean(member.joined && todayKeyValue < member.joined);
+                const today = attendanceStatus(
+                  member.userId,
+                  db.attendance,
+                  db.leave,
+                  new Date(),
+                  lateUntilOf(member),
+                  db.publicHolidays,
+                  db.workingDays
+                );
                 return (
                   <tr key={member.userId}>
                     <td>
@@ -400,7 +410,13 @@ function TeamTools({ lead }: { lead: Person }) {
                     <td>{member.userId}</td>
                     <td>{roleLabel(member)}</td>
                     <td>
-                      {today === "weekend" ? "—" : <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>}
+                      {beforeJoin ? (
+                        <span className="muted">Not joined</span>
+                      ) : today === "weekend" ? (
+                        "—"
+                      ) : (
+                        <span className={dayStatusClass(today)}>{dayStatusLabel(today, "Not in")}</span>
+                      )}
                     </td>
                   </tr>
                 );

@@ -2,7 +2,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, Route, Routes } from "react-router-dom";
 import { AccountSettings } from "../AccountSettings";
-import { AccountSettingsButton, DashboardIcon, LeaveIcon, ReportIcon, SideLink, TeamIcon } from "../ShellChrome";
+import { AccountSettingsButton, CalendarIcon, DashboardIcon, LeaveIcon, ReportIcon, SideLink, TeamIcon } from "../ShellChrome";
 import {
   TEAMS,
   attendanceHref,
@@ -16,12 +16,14 @@ import {
   lateUntilOf,
   logout,
   personTeams,
+  todayKey,
   useDatabase,
   useSession,
 } from "../store";
 import { AttendanceList } from "./AttendanceList";
 import { AttendanceReport } from "./AttendanceReport";
 import { Dashboard } from "./Dashboard";
+import { HolidayManagement } from "./HolidayManagement";
 
 export function HrShell() {
   const session = useSession();
@@ -46,6 +48,9 @@ export function HrShell() {
           </SideLink>
           <SideLink to="/teams" icon={<TeamIcon />}>
             Teams
+          </SideLink>
+          <SideLink to="/holidays" icon={<CalendarIcon />}>
+            Holidays
           </SideLink>
           {grant ? (
             <SideLink to="/leave" icon={<LeaveIcon />}>
@@ -81,6 +86,7 @@ export function HrShell() {
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/:userId" element={<AttendanceReport />} />
             <Route path="/teams" element={<HrTeams />} />
+            <Route path="/holidays" element={<HolidayManagement />} />
             {grant ? <Route path="/leave" element={<GrantLeave />} /> : null}
             <Route path="/account" element={<AccountSettings person={session} />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
@@ -100,7 +106,7 @@ function HrTeams() {
       <div className="manage-head">
         <div>
           <h1>Teams</h1>
-          <p className="muted">Today’s status for every person on each team. Late is shown here. A fourth late day in a row counts as absent.</p>
+          <p className="muted">Today’s status for every person on each team. Check-ins after 9:30 AM are late.</p>
         </div>
       </div>
       {TEAMS.map((team) => {
@@ -125,7 +131,16 @@ function HrTeams() {
                   </tr>
                 ) : (
                   members.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), lateUntilOf(person));
+                    const beforeJoin = Boolean(person.joined && todayKey() < person.joined);
+                    const status = attendanceStatus(
+                      person.userId,
+                      db.attendance,
+                      db.leave,
+                      new Date(),
+                      lateUntilOf(person),
+                      db.publicHolidays,
+                      db.workingDays
+                    );
                     return (
                       <tr key={person.userId}>
                         <td>
@@ -135,7 +150,9 @@ function HrTeams() {
                         </td>
                         <td>{person.userId}</td>
                         <td>
-                          {status === "weekend" ? (
+                          {beforeJoin ? (
+                            <span className="muted">Not joined</span>
+                          ) : status === "weekend" ? (
                             "—"
                           ) : (
                             <span className={dayStatusClass(status)}>{dayStatusLabel(status, "Absent")}</span>

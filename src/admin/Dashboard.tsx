@@ -100,8 +100,17 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
     const tally = (date: Date) => {
       const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of staff) {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, date, lateUntilOf(person));
-        if (status === "weekend") continue;
+        if (person.joined && todayKey(date) < person.joined) continue;
+        const status = attendanceStatus(
+          person.userId,
+          db.attendance,
+          db.leave,
+          date,
+          lateUntilOf(person),
+          db.publicHolidays,
+          db.workingDays
+        );
+        if (status === "weekend" || status === "holiday") continue;
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
@@ -122,8 +131,17 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
       const members = staff.filter((person) => personTeams(person).includes(team.id));
       const counts = { onTime: 0, late: 0, leave: 0, notIn: 0 };
       for (const person of members) {
-        const status = attendanceStatus(person.userId, db.attendance, db.leave, new Date(), lateUntilOf(person));
-        if (status === "weekend") continue;
+        if (person.joined && todayKey() < person.joined) continue;
+        const status = attendanceStatus(
+          person.userId,
+          db.attendance,
+          db.leave,
+          new Date(),
+          lateUntilOf(person),
+          db.publicHolidays,
+          db.workingDays
+        );
+        if (status === "weekend" || status === "holiday") continue;
         if (status === "on_time") counts.onTime += 1;
         else if (status === "late") counts.late += 1;
         else if (status === "leave") counts.leave += 1;
@@ -188,9 +206,18 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
     }
     return staff.filter((person) => {
       if (focus.teamId && !personTeams(person).includes(focus.teamId)) return false;
-      const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, lateUntilOf(person));
+      if (person.joined && todayKey(focus.when) < person.joined) return false;
+      const status = attendanceStatus(
+        person.userId,
+        db.attendance,
+        db.leave,
+        focus.when,
+        lateUntilOf(person),
+        db.publicHolidays,
+        db.workingDays
+      );
       if (focus.kind === "present") return status === "on_time" || status === "late";
-      if (focus.kind === "not_in") return status === "not_in" || status === "absentee";
+      if (focus.kind === "not_in") return status === "not_in";
       return status === focus.kind;
     });
   }, [db, focus, staff]);
@@ -226,7 +253,7 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
           <h1>Dashboard</h1>
           {marking && !viewer ? null : (
             <p className="muted">
-              Every registered person is included. Click a count to see who it includes. A fourth late day in a row counts as absent.
+              Attendance is counted from each person’s joining date. Check-ins after 9:30 AM are late.
             </p>
           )}
         </div>
@@ -368,7 +395,15 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                 </div>
                 <ul>
                   {people.map((person) => {
-                    const status = attendanceStatus(person.userId, db.attendance, db.leave, focus.when, lateUntilOf(person));
+                    const status = attendanceStatus(
+                      person.userId,
+                      db.attendance,
+                      db.leave,
+                      focus.when,
+                      lateUntilOf(person),
+                      db.publicHolidays,
+                      db.workingDays
+                    );
                     const record = db.attendance.find(
                       (item) => item.userId === person.userId && item.date === todayKey(focus.when)
                     );
@@ -377,13 +412,13 @@ export function Dashboard({ variant = "admin" }: { variant?: "admin" | "hr" }) {
                         ? leaveSpan(person)
                         : status === "late"
                           ? "Late"
-                          : status === "absentee"
-                            ? "Absentee"
                           : status === "on_time"
                             ? "On time"
-                            : status === "not_in"
-                              ? "Absent"
-                              : "";
+                            : status === "holiday"
+                              ? "Holiday"
+                              : status === "not_in"
+                                ? "Absent"
+                                : "";
                     return (
                       <li key={person.userId}>
                         <Link className="roster-person roster-row" to={attendanceHref(person.userId, "dashboard")}>

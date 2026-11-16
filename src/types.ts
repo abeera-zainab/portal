@@ -5,7 +5,7 @@ export type TeamId = "offensive" | "defensive" | "ops" | "product" | "hr";
 export type WorkMode = "wfh" | "remote";
 
 /** Check-ins after this time count as late. */
-export type LateUntil = "09:00";
+export type LateUntil = "09:30";
 
 export interface Person {
   userId: string;
@@ -18,7 +18,7 @@ export interface Person {
   teams?: TeamId[];
   active?: boolean;
   joined?: string;
-  /** Legacy per-person field; attendance uses the shared 09:00 cutoff. */
+  /** Legacy per-person field; attendance uses the shared 09:30 cutoff. */
   lateUntil?: LateUntil;
   /** Legacy field; individual late exemptions are no longer supported. */
   lateAllowed?: boolean;
@@ -111,6 +111,16 @@ export interface TaskTeam {
   name: string;
 }
 
+export interface PublicHoliday {
+  date: string;
+  name: string;
+}
+
+export interface WorkingDay {
+  date: string;
+  reason: string;
+}
+
 export interface Database {
   people: Person[];
   attendance: AttendanceRecord[];
@@ -122,4 +132,6 @@ export interface Database {
   sheetDays: string[];
   /** Labels the admin can file tasks under, including ones they add. */
   taskTeams: TaskTeam[];
+  publicHolidays: PublicHoliday[];
+  workingDays: WorkingDay[];
 }

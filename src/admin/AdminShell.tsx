@@ -7,6 +7,7 @@ import { TaskForm } from "../tasks/TaskForm";
 import { TaskList } from "../tasks/TaskList";
 import {
   AccountSettingsButton,
+  CalendarIcon,
   DashboardIcon,
   LeaveIcon,
   LeaveNotifications,
@@ -19,6 +20,7 @@ import { logout, useSession } from "../store";
 import { AttendanceList } from "./AttendanceList";
 import { AttendanceReport } from "./AttendanceReport";
 import { Dashboard } from "./Dashboard";
+import { HolidayManagement } from "./HolidayManagement";
 import { UserDetail } from "./PersonDetail";
 import { UserManagement } from "./UserManagement";
 
@@ -47,6 +49,9 @@ export function AdminShell() {
           </SideLink>
           <SideLink to="/my-attendance" icon={<ReportIcon />}>
             My attendance
+          </SideLink>
+          <SideLink to="/holidays" icon={<CalendarIcon />}>
+            Holidays
           </SideLink>
           <SideLink to="/users" icon={<PeopleIcon />}>
             User management
@@ -83,6 +88,7 @@ export function AdminShell() {
             <Route path="/users" element={<UserManagement />} />
             <Route path="/attendance" element={<AttendanceList />} />
             <Route path="/attendance/:userId" element={<AttendanceReport />} />
+            <Route path="/holidays" element={<HolidayManagement />} />
             <Route path="/leave" element={<LeavePage />} />
             <Route path="/tasks" element={<TasksHome person={session} />} />
             <Route path="/tasks/list" element={<TaskList person={session} />} />

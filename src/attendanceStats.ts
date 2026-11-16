@@ -13,19 +13,35 @@ const eachDay = (from: string, to: string) => {
   return days;
 };
 
-export function attendanceTotals(person: Person, attendance: Database["attendance"], leave: Database["leave"]) {
+export function attendanceTotals(
+  person: Person,
+  attendance: Database["attendance"],
+  leave: Database["leave"],
+  publicHolidays?: Database["publicHolidays"],
+  workingDays?: Database["workingDays"]
+) {
   const today = todayKey();
   const history = attendance.filter((record) => record.userId === person.userId);
   const earliest = history.reduce((soonest, record) => (record.date < soonest ? record.date : soonest), today);
-  const start = person.joined && person.joined < earliest ? person.joined : earliest;
+  const start = person.joined ?? earliest;
   let present = 0;
   let absent = 0;
   let leaves = 0;
   let late = 0;
   let weekend = 0;
+  let holiday = 0;
   for (const day of eachDay(start, today)) {
-    const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), lateUntilOf(person));
+    const status = attendanceStatus(
+      person.userId,
+      attendance,
+      leave,
+      new Date(`${day}T12:00:00`),
+      lateUntilOf(person),
+      publicHolidays,
+      workingDays
+    );
     if (status === "weekend") weekend += 1;
+    else if (status === "holiday") holiday += 1;
     else if (status === "leave") leaves += 1;
     else if (status === "late") {
       present += 1;
@@ -33,10 +49,17 @@ export function attendanceTotals(person: Person, attendance: Database["attendanc
     } else if (status === "on_time") present += 1;
     else absent += 1;
   }
-  return { total: present + absent + leaves + weekend, present, absent, leaves, late, weekend };
+  return { total: present + absent + leaves + weekend + holiday, present, absent, leaves, late, weekend, holiday };
 }
 
-export function monthTotals(person: Person, attendance: Database["attendance"], leave: Database["leave"], month = new Date()) {
+export function monthTotals(
+  person: Person,
+  attendance: Database["attendance"],
+  leave: Database["leave"],
+  month = new Date(),
+  publicHolidays?: Database["publicHolidays"],
+  workingDays?: Database["workingDays"]
+) {
   const today = todayKey();
   const monthStart = todayKey(new Date(month.getFullYear(), month.getMonth(), 1));
   const start = person.joined && person.joined > monthStart ? person.joined : monthStart;
@@ -45,10 +68,20 @@ export function monthTotals(person: Person, attendance: Database["attendance"], 
   let leaves = 0;
   let late = 0;
   let weekend = 0;
+  let holiday = 0;
   if (start <= today) {
     for (const day of eachDay(start, today)) {
-      const status = attendanceStatus(person.userId, attendance, leave, new Date(`${day}T12:00:00`), lateUntilOf(person));
+      const status = attendanceStatus(
+        person.userId,
+        attendance,
+        leave,
+        new Date(`${day}T12:00:00`),
+        lateUntilOf(person),
+        publicHolidays,
+        workingDays
+      );
       if (status === "weekend") weekend += 1;
+      else if (status === "holiday") holiday += 1;
       else if (status === "leave") leaves += 1;
       else if (status === "late") {
         present += 1;
@@ -57,5 +90,5 @@ export function monthTotals(person: Person, attendance: Database["attendance"], 
       else absent += 1;
     }
   }
-  return { total: present + absent + leaves + weekend, present, absent, leaves, late, weekend };
+  return { total: present + absent + leaves + weekend + holiday, present, absent, leaves, late, weekend, holiday };
 }
