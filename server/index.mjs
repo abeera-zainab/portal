@@ -652,15 +652,6 @@ app.post("/api/attendance/check-in", async (req, res) => {
     res.status(400).json({ error: "Attendance cannot be recorded before your joining date." });
     return;
   }
-  const schedule = await getDaySchedule(date);
-  if (schedule.isHoliday) {
-    res.status(400).json({ error: `Today is a public holiday (${schedule.holidayName}).` });
-    return;
-  }
-  if (!schedule.isWorkingDay) {
-    res.status(400).json({ error: "Saturday and Sunday are a weekend holiday." });
-    return;
-  }
   try {
     await pool.query(
       `INSERT INTO attendance (user_id, date, check_in, late) VALUES ($1, $2, $3, $4)`,

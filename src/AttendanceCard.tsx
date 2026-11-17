@@ -39,7 +39,6 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
   const beforeJoin = Boolean(person.joined && todayKey(now) < person.joined);
   const today = todayKey(now);
   const holiday = holidayFor(today, db.publicHolidays);
-  const isHoliday = Boolean(holiday);
   const wkDay = workingDayFor(today, db.workingDays);
   const status = attendanceStatus(person.userId, db.attendance, db.leave, now, undefined, db.publicHolidays, db.workingDays);
   const onLeave = status === "leave";
@@ -50,16 +49,16 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
       <h2>{heading}</h2>
       <p className="muted">
         {holiday
-          ? `Today is a public holiday (${holiday.name}). Check-in is closed.`
+          ? `Today is a public holiday (${holiday.name}). You can still check in; check-ins after 9:30 AM are late.`
           : wkDay
-          ? `Today is a working weekend day${wkDay.reason ? ` (${wkDay.reason})` : ""}. Check in by 9:30 AM.`
+          ? `Today is a working weekend day${wkDay.reason ? ` (${wkDay.reason})` : ""}. Check-ins after 9:30 AM are late.`
           : weekend
-          ? "Check-in is closed today."
+          ? "You can check in today. Check-ins after 9:30 AM are late."
           : beforeJoin
           ? `Attendance starts on ${person.joined}.`
           : onLeave
           ? "You are on approved leave today."
-          : "Check in by 9:30 AM. Check-ins after 9:30 AM are late."}
+          : "Check in any time. Check-ins after 9:30 AM are late."}
       </p>
       <div className="role-tags">
         {holiday ? <span className="badge holiday">{holiday.name}</span> : null}
@@ -90,7 +89,7 @@ export function AttendanceCard({ person, heading = "Today" }: { person: Person; 
       <div className="row">
         <button
           className="btn"
-          disabled={beforeJoin || weekend || isHoliday || Boolean(record?.checkIn)}
+          disabled={beforeJoin || Boolean(record?.checkIn)}
           onClick={() => run(() => checkIn(person.userId))}
         >
           Check in
