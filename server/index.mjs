@@ -647,8 +647,8 @@ app.post("/api/attendance/check-in", async (req, res) => {
   const now = new Date();
   const late = now.getTime() > lateCutoffAt(now).getTime();
   const date = localDate(now);
-  const person = await pool.query(`SELECT joined FROM people WHERE user_id = $1`, [userId]);
-  if (person.rows[0]?.joined && date < localDate(new Date(`${person.rows[0].joined}T12:00:00`))) {
+  const person = await pool.query(`SELECT to_char(joined, 'YYYY-MM-DD') AS joined FROM people WHERE user_id = $1`, [userId]);
+  if (person.rows[0]?.joined && date < person.rows[0].joined) {
     res.status(400).json({ error: "Attendance cannot be recorded before your joining date." });
     return;
   }
@@ -741,12 +741,15 @@ app.put("/api/attendance", async (req, res) => {
     res.status(400).json({ error: "Check out cannot be before check in." });
     return;
   }
-  const person = await pool.query(`SELECT user_id, joined FROM people WHERE user_id = $1`, [userId]);
+  const person = await pool.query(
+    `SELECT user_id, to_char(joined, 'YYYY-MM-DD') AS joined FROM people WHERE user_id = $1`,
+    [userId]
+  );
   if (!person.rows[0]) {
     res.status(404).json({ error: "Person not found." });
     return;
   }
-  if (person.rows[0].joined && date < localDate(new Date(`${person.rows[0].joined}T12:00:00`))) {
+  if (person.rows[0].joined && date < person.rows[0].joined) {
     res.status(400).json({ error: "Attendance cannot be recorded before the person's joining date." });
     return;
   }
@@ -815,7 +818,10 @@ app.post("/api/attendance/present", async (req, res) => {
     res.status(400).json({ error: "Choose today or a past day." });
     return;
   }
-  const person = await pool.query(`SELECT user_id, role, joined FROM people WHERE user_id = $1`, [userId]);
+  const person = await pool.query(
+    `SELECT user_id, role, to_char(joined, 'YYYY-MM-DD') AS joined FROM people WHERE user_id = $1`,
+    [userId]
+  );
   if (!person.rows[0]) {
     res.status(404).json({ error: "Person not found." });
     return;
@@ -824,7 +830,7 @@ app.post("/api/attendance/present", async (req, res) => {
     res.status(400).json({ error: "That account cannot be changed." });
     return;
   }
-  if (person.rows[0].joined && date < localDate(new Date(`${person.rows[0].joined}T12:00:00`))) {
+  if (person.rows[0].joined && date < person.rows[0].joined) {
     res.status(400).json({ error: "Attendance cannot be recorded before the person's joining date." });
     return;
   }
